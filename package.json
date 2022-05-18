@@ -3,16 +3,20 @@
   "version": "1.0.0",
   "description": "",
   "main": "src/main/index.js",
+  
   "scripts": {
     "start": "electron .",
-	"build": "electron-builder",
-    "debug-in-chrome": "yarn start --inspect-brk",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "electron-builder",
+    "debug-in-chrome": "electron . --inspect-brk",
+    "test": "jest"
   },
+  
   "author": "",
   "license": "ISC",
+
   "devDependencies": {
     "electron": "^18.2.3",
-    "electron-builder": "^23.0.3"
+    "electron-builder": "^23.0.3",
+    "jest": "^28.1.0"
   }
 }

@@ -4,13 +4,15 @@
   "description": "",
   "main": "src/main/index.js",
   "scripts": {
-	"start": "electron .",
-	"debug-in-chrome":  "yarn start --inspect-brk",
+    "start": "electron .",
+	"build": "electron-builder",
+    "debug-in-chrome": "yarn start --inspect-brk",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "",
   "license": "ISC",
   "devDependencies": {
-    "electron": "^18.2.3"
+    "electron": "^18.2.3",
+    "electron-builder": "^23.0.3"
   }
 }

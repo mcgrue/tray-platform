@@ -1,1 +1,6 @@
+#any node thing ever
 node_modules/
+
+#electron builder
+dist/
+

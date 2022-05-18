@@ -1,0 +1,1 @@
+alert("I was loaded from a script src");

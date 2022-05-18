@@ -2,7 +2,7 @@
   "name": "danielstyle",
   "version": "1.0.0",
   "description": "",
-  "main": "src/index.js",
+  "main": "src/main/index.js",
   "scripts": {
 	"start": "electron .",
 	"debug-in-chrome":  "yarn start --inspect-brk",

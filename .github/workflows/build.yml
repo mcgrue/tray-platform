@@ -1,5 +1,5 @@
-
-on: ["workflow_dispatch", "publish"] #hm, is there a better one?
+on: ['workflow_dispatch'] #hm, is there a better one?
+# on... "publish" doesnt work?
 
 # available runs-on are listed here:
 # https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#choosing-github-hosted-runners
@@ -13,52 +13,64 @@ jobs:
     name: Build-Ubuntu
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v3
 
-    - uses: actions/checkout@v3
+      - name: Setup Node.js 16.x
+        uses: actions/setup-node@v2
+        with:
+          cache: yarn
+          node-version: 16.x
 
-    - name: Setup Node.js 16.x
-      uses: actions/setup-node@v2
-      with:
-        cache: yarn
-        node-version: 16.x
+      - name: Install and Test
+        run: |
+          yarn
+          yarn build
 
-    - name: Install and Test
-      run: |
-        yarn
-        yarn build
-  
+      - name: Save Ubuntu Artifact
+      - run: zip -r artifacts/ubuntu-breaditor-latest.zip dist # zip'r up
+      - uses: actions/upload-artifact@v3
+        with:
+          name: ubuntu-build
+          path: artifacts/current
+
   build-windows:
     name: Build-Windows
     runs-on: windows-latest
     steps:
+      - uses: actions/checkout@v3
 
-    - uses: actions/checkout@v3
+      - name: Setup Node.js 16.x
+        uses: actions/setup-node@v2
+        with:
+          cache: yarn
+          node-version: 16.x
 
-    - name: Setup Node.js 16.x
-      uses: actions/setup-node@v2
-      with:
-        cache: yarn
-        node-version: 16.x
+      - name: Install and Test
+        run: |
+          yarn
+          yarn build
 
-    - name: Install and Test
-      run: |
-        yarn
-        yarn build
-  
+      - name: Save Windows Artifact
+      - run: Compress-Archive dist/* artifacts/win-breaditor-latest.zip -Force
+
+      - uses: actions/upload-artifact@v3
+        with:
+          name: windows-build
+          path: artifacts/current
+
   build-osx:
     name: Build-OSX
     runs-on: osx-latest
     steps:
+      - uses: actions/checkout@v3
 
-    - uses: actions/checkout@v3
+      - name: Setup Node.js 16.x
+        uses: actions/setup-node@v2
+        with:
+          cache: yarn
+          node-version: 16.x
 
-    - name: Setup Node.js 16.x
-      uses: actions/setup-node@v2
-      with:
-        cache: yarn
-        node-version: 16.x
-
-    - name: Install and Test
-      run: |
-        yarn
-        yarn build
+      - name: Install and Test
+        run: |
+          yarn
+          yarn build

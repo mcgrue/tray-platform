@@ -3,21 +3,31 @@
   "version": "1.0.0",
   "description": "DXM & GRU try to make a first-principles minimal electron buddy",
   "main": "dist/main/index.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mcgrue/electron-from-scratch.git"
+  },
   "scripts": {
     "start": "electron .",
     "build": "yarn pre-build-main && yarn pre-build-app && electron-builder",
     "pre-build-app": "esbuild src/app/external.js --outfile=dist/app/external.js && cp src/app/index.html dist/app/index.html",
     "pre-build-main": "esbuild src/main/index.js --outfile=dist/main/index.js",
+    "pre-build": "node build-infrastructure/esbuild.js",
     "debug-in-chrome": "electron . --inspect-brk",
-    "test": "jest"
+    "build-types": " TODO - ask DXM wtf to pass to tsc! ",
+    "test": "jest",
+    "test-ts": "ts-jest"
   },
   "author": "",
   "license": "ISC",
   "devDependencies": {
+    "@types/jest": "^28.1.1",
     "electron": "^18.2.3",
     "electron-builder": "^23.0.3",
     "esbuild": "^0.14.39",
-    "jest": "^28.1.0"
+    "jest": "^28.1.0",
+    "ts-jest": "^28.0.4",
+    "typescript": "^4.7.3"
   },
   "build": {
     "appId": "com.gruniverse.danielstyle/yolo",

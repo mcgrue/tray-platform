@@ -7,3 +7,5 @@ dist/
 #
 electronbuild-resources/
 electronbuild-output/
+
+yarn-error.log

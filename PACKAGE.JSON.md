@@ -3,7 +3,3 @@
 
 `main` points to the dist directory, because that's where esbuild builds to.  electron uses main to find where to run things.
 `build` is specifically all of the electron-build config variables
-
-
-
-

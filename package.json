@@ -1,24 +1,36 @@
 {
   "name": "danielstyle",
   "version": "1.0.0",
-  "description": "",
-  
-  "main": "src/main/index.js",
-  
+  "description": "DXM & GRU try to make a first-principles minimal electron buddy",
+  "main": "dist/main/index.js",
   "scripts": {
     "start": "electron .",
-    "build": "electron-builder",
+    "build": "yarn pre-build-main && yarn pre-build-app && electron-builder",
+    "pre-build-app": "esbuild src/app/external.js --outfile=dist/app/external.js && cp src/app/index.html dist/app/index.html",
+    "pre-build-main": "esbuild src/main/index.js --outfile=dist/main/index.js",
     "debug-in-chrome": "electron . --inspect-brk",
     "test": "jest"
   },
-  
   "author": "",
   "license": "ISC",
-
   "devDependencies": {
     "electron": "^18.2.3",
     "electron-builder": "^23.0.3",
     "esbuild": "^0.14.39",
     "jest": "^28.1.0"
+  },
+  "build": {
+    "appId": "com.gruniverse.danielstyle/yolo",
+    "files": [
+      "dist/**"
+    ],
+    "win": {
+      "target": "dir"
+    },
+    "directories": {
+      "buildResources": "electronbuild-resources",
+      "output": "electronbuild-output",
+      "app": "."
+    }
   }
 }

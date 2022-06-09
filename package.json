@@ -1,5 +1,5 @@
 {
-  "name": "danielstyle",
+  "name": "electron-from-scratch",
   "version": "1.0.0",
   "description": "DXM & GRU try to make a first-principles minimal electron buddy",
   "main": "dist/main/index.js",
@@ -9,9 +9,7 @@
   },
   "scripts": {
     "start": "electron .",
-    "build": "yarn pre-build-main && yarn pre-build-app && electron-builder",
-    "pre-build-app": "esbuild src/app/external.js --outfile=dist/app/external.js && cp src/app/index.html dist/app/index.html",
-    "pre-build-main": "esbuild src/main/index.js --outfile=dist/main/index.js",
+    "build": "yarn pre-build && electron-builder",
     "pre-build": "node build-infrastructure/esbuild.js",
     "debug-in-chrome": "electron . --inspect-brk",
     "build-types": " TODO - ask DXM wtf to pass to tsc! ",
@@ -19,10 +17,10 @@
     "test-ts": "ts-jest"
   },
   "author": "",
-  "license": "ISC",
+  "license": "MIT",
   "devDependencies": {
     "@types/jest": "^28.1.1",
-    "electron": "^18.2.3",
+    "electron": "^19.0.4",
     "electron-builder": "^23.0.3",
     "esbuild": "^0.14.39",
     "jest": "^28.1.0",
@@ -35,12 +33,20 @@
       "dist/**"
     ],
     "win": {
-      "target": "dir"
+      "publish": [
+        "github"
+      ],
+      "target": "nsis"
     },
     "directories": {
       "buildResources": "electronbuild-resources",
       "output": "electronbuild-output",
       "app": "."
     }
+  },
+  "nsis": {
+    "oneClick": false,
+    "perMachine": true,
+    "allowToChangeInstallationDirectory": true
   }
 }

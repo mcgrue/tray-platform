@@ -9,7 +9,7 @@
   },
   "scripts": {
     "start": "electron .",
-    "build": "yarn pre-build && electron-builder",
+    "build": "yarn pre-build && echo DONE ESBUILD'N && echo START ELECTRON BUILDIN' && electron-builder",
     "pre-build": "node build-infrastructure/esbuild.js",
     "debug-in-chrome": "electron . --inspect-brk",
     "build-types": " TODO - ask DXM wtf to pass to tsc! ",
@@ -18,6 +18,9 @@
   },
   "author": "",
   "license": "MIT",
+  "dependencies": {
+    "dotenv": "^16.0.1"
+  },
   "devDependencies": {
     "@types/jest": "^28.1.1",
     "electron": "^19.0.4",
@@ -36,7 +39,7 @@
       "publish": [
         "github"
       ],
-      "target": "nsis"
+      "target": "portable"
     },
     "directories": {
       "buildResources": "electronbuild-resources",

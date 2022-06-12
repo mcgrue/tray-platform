@@ -23,12 +23,16 @@
   },
   "devDependencies": {
     "@types/jest": "^28.1.1",
+    "@types/node": "^17.0.22",
+    "@typescript-eslint/eslint-plugin": "5.16.0",
+    "@typescript-eslint/parser": "5.16.0",
     "electron": "^19.0.4",
     "electron-builder": "^23.0.3",
     "esbuild": "^0.14.39",
+    "eslint": "8.11.0",
     "jest": "^28.1.0",
     "ts-jest": "^28.0.4",
-    "typescript": "^4.7.3"
+    "typescript": "^4.6.2"
   },
   "build": {
     "appId": "com.gruniverse.danielstyle/yolo",
@@ -43,8 +47,7 @@
     },
     "directories": {
       "buildResources": "electronbuild-resources",
-      "output": "electronbuild-output",
-      "app": "."
+      "output": "electronbuild-output"
     }
   },
   "nsis": {

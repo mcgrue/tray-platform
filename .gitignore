@@ -1,3 +1,7 @@
+# watch subprocess files - powershell
+powershell-yarn-error.txt
+powershell-yarn-output.txt
+
 #any node thing ever
 node_modules/
 

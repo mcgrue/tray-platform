@@ -1,4 +1,5 @@
 const esbuild = require('esbuild');
+const pluginCopy = require('esbuild-plugin-copy');
 
 // TODO: make these settable from args
 const sourcemap = true;
@@ -22,6 +23,18 @@ const minify = false;
       entryPoints: ['src/main/index.ts'],
       outfile: 'dist/main/index.js',
       external: ['electron'],
+      plugins: [
+        pluginCopy.copy({
+          // this is equal to process.cwd(), which means we use cwd path as base path to resolve `to` path
+          // if not specified, this plugin uses ESBuild.build outdir/outfile options as base path.
+          resolveFrom: 'cwd',
+          assets: {
+            from: ['./src/app/index.html'],
+            to: ['./dist/app/index.html'],
+          },
+          watch: true,
+        }),
+      ]
       // plugins: [
       //   extensionResolverPlugin(['coffee', 'jadelet']),
       //   coffeeScriptPlugin({

@@ -1,7 +1,8 @@
-const sync = require('fs')
-const asyncFs = require('fs').promises; // Use the promise-based version of the fs module
+import { getWindow } from './renderer-window';
+import * as sync from 'fs';
+import { promises as asyncFs } from 'fs';
 
-console.log("I am dev-watch okay")
+console.log("dev-watch loaded...")
 
 const _mainDir = 'dist/main';
 const _appDir = 'dist/app';
@@ -40,10 +41,10 @@ async function checkFileSizeAndAlert(filename) {
         fileSizes.set(filename, newSize); // Update the stored size
 
         if (newSize !== oldSize) {
-            //console.log(`File size CHANGED for ${filename}: old size = ${oldSize}, new size = ${newSize}`);
+            // console.log(`File size CHANGED for ${filename}: old size = ${oldSize}, new size = ${newSize}`);
             return true; // File size has changed
         } else {
-            //console.log(`File size NOT changed for ${filename}: old size = ${oldSize}, new size = ${newSize}`);
+            // console.log(`File size NOT changed for ${filename}: old size = ${oldSize}, new size = ${newSize}`);
             return false; // File size has not changed
         }
     } catch (err) {
@@ -57,7 +58,7 @@ let lastMain = new Date().getTime();
 
 let WAIT_IN_MS = 1000;
 
-function foo(realDir, doOnHit)
+function watchDirectory(realDir, doOnHit)
 {
     console.log("setting up ", realDir);
 
@@ -87,12 +88,19 @@ function foo(realDir, doOnHit)
     }).catch(err => console.error("Error prepopulating file sizes:", err));    
 }
 
-foo(_appDir, (filename) => {
-    console.log("APP CHANGE", filename)
-});
+const init = function init() {
+    watchDirectory(_appDir, (filename) => {
+        // console.log("APP CHANGE", filename)
+        
+        // getWindow().webContents.send('set-tile', "APP")
+        getWindow().webContents.send('refresh-page', "APP")
+    });
+    
+    watchDirectory(_mainDir, (filename) => {
+        //console.log("MAIN CHANGE", filename)
 
+        getWindow().webContents.send('show-alert', 'Main Process code is out of date\n\nPlease quit and restart'); 
+    });
+}
 
-
-foo(_mainDir, (filename) => {
-    console.log("MAIN CHANGE", filename)
-});
+export default init;

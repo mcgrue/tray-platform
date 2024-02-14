@@ -1,16 +1,27 @@
-//const {app, BrowserWindow} = require('electron');
-import {BrowserWindow, app} from 'electron';
+import { BrowserWindow, ipcMain, app } from 'electron';
+import { setWindow, getWindowContents } from './renderer-window';
+const path = require('node:path'); 
 
-let _window: BrowserWindow;
+import init from './dev-watch'
+init();
+
+console.log('__dirname', __dirname);
 
 app.on('ready', (event) => {
-  _window = new BrowserWindow({
+  const _window = new BrowserWindow({
     webPreferences: {
       nodeIntegration: true,
-      // enableRemoteModule: true,
+      preload: path.join(__dirname, 'preload_js.js'),
+      // contextIsolation: true,
     },
   });
+  
   _window.loadFile('dist/app/index.html'); // cwd is wherever you called `electron start` from.
-});
+  setWindow(_window);
 
-//export {}; // to calm --isolatedModules's tits
+  ipcMain.on('set-title', (event, title) => {
+    const webContents = event.sender
+    let win = BrowserWindow.fromWebContents(webContents) as any
+    (win as any).setTitle(title)
+  })
+});

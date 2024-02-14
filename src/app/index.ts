@@ -1,5 +1,11 @@
-console.log('This space intentionally left blank!');
 
-export function sum(a: number, b: number) {
-  return a + b;
-}
+
+
+
+window['ipcComms'].onShowAlert((value) => {
+  alert(value)
+})
+
+window['ipcComms'].onRefreshPage((value) => {
+  location.reload();
+})

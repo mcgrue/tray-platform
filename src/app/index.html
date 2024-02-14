@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self';">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self';">
 
   <style>
     body {
@@ -10,8 +10,22 @@
   </style>
 </head>
 <body>
-  Title: <input id="title"/>
-  <button id="btn" type="button">Set</button>
-  <script src="./index.js"></script>
+  <audio id="audio-1" src="./resources/achievement-pop.wav"></audio>
+  <button onclick="playSound('audio-1')">Play Sound 1 </button>
+
+  <audio id="audio-2" src="./resources/sully-fanfare.ogg"></audio>
+  <button onclick="playSound('audio-2')">Play Sound 2</button>
+
+  <audio id="audio-3" src="./resources/you-did-something-yay.wav"></audio>
+  <button onclick="playSound('audio-3')">Play Sound 3</button>
+
+  <script>
+  function playSound(id) {
+    var audio = document.getElementById(id);
+    audio.play();
+  }
+  </script>
+
 </body>
 </html>
+<script src="./index.js"></script>

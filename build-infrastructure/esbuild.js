@@ -77,6 +77,16 @@ const minify = false;
           // if not specified, this plugin uses ESBuild.build outdir/outfile options as base path.
           resolveFrom: 'cwd',
           assets: {
+            from: ['./src/app/resources/*'],
+            to: ['./dist/app/resources'],
+          },
+          watch: true,
+        }),
+        pluginCopy.copy({
+          // this is equal to process.cwd(), which means we use cwd path as base path to resolve `to` path
+          // if not specified, this plugin uses ESBuild.build outdir/outfile options as base path.
+          resolveFrom: 'cwd',
+          assets: {
             from: ['./src/app/index.html'],
             to: ['./dist/app/index.html'],
           },

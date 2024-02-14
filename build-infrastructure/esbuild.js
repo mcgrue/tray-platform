@@ -29,8 +29,8 @@ const minify = false;
           // if not specified, this plugin uses ESBuild.build outdir/outfile options as base path.
           resolveFrom: 'cwd',
           assets: {
-            from: ['./src/app/index.html'],
-            to: ['./dist/app/index.html'],
+            from: ['./src/main/resources/*'],
+            to: ['./dist/main/resources'],
           },
           watch: true,
         }),
@@ -45,13 +45,7 @@ const minify = false;
           watch: true,
         }),
       ]
-      // plugins: [
-      //   extensionResolverPlugin(['coffee', 'jadelet']),
-      //   coffeeScriptPlugin({
-      //     bare: true,
-      //     inlineMap: sourcemap,
-      //   }),
-      // ],
+
     })
     .catch(function () {
       return process.exit(1);
@@ -77,13 +71,18 @@ const minify = false;
       platform: 'browser',
       entryPoints: ['src/app/renderer.ts'],
       outfile: 'dist/app/index.js',
-      // plugins: [
-      //   extensionResolverPlugin(['coffee', 'jadelet']),
-      //   coffeeScriptPlugin({
-      //     bare: true,
-      //     inlineMap: sourcemap,
-      //   }),
-      // ],
+      plugins: [
+        pluginCopy.copy({
+          // this is equal to process.cwd(), which means we use cwd path as base path to resolve `to` path
+          // if not specified, this plugin uses ESBuild.build outdir/outfile options as base path.
+          resolveFrom: 'cwd',
+          assets: {
+            from: ['./src/app/index.html'],
+            to: ['./dist/app/index.html'],
+          },
+          watch: true,
+        }),
+      ]
     })
     .catch(function () {
       return process.exit(2);

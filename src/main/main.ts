@@ -2,6 +2,7 @@ import { BrowserWindow, ipcMain, app, session, Tray } from 'electron';
 import { setWindow } from './renderer-window';
 import {doInspectorSetupOnStart} from './dev-mode';
 import {setupTray} from './tray'
+const dotenv = require('dotenv').config();
 const path = require('node:path'); 
 
 let tray:Tray;
@@ -34,6 +35,10 @@ app.on('ready', (event) => {
     event.preventDefault();
     mainWindow.hide();
   });
+
+  if (dotenv.parsed && !dotenv.parsed.BREADITOR_DEV_MODE) {
+    mainWindow.hide();
+  }
 
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     callback({

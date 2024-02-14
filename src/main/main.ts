@@ -1,23 +1,32 @@
-import { BrowserWindow, ipcMain, app } from 'electron';
-import { setWindow, getWindowContents } from './renderer-window';
+import { BrowserWindow, ipcMain, app, session } from 'electron';
+import { setWindow } from './renderer-window';
+import {doInspectorSetupOnStart} from './dev-mode';
 const path = require('node:path'); 
-
-import init from './dev-watch'
-init();
 
 console.log('__dirname', __dirname);
 
 app.on('ready', (event) => {
-  const _window = new BrowserWindow({
+  const mainWindow = new BrowserWindow({
     webPreferences: {
+      contextIsolation: true,
       nodeIntegration: true,
       preload: path.join(__dirname, 'preload_js.js'),
-      // contextIsolation: true,
     },
   });
-  
-  _window.loadFile('dist/app/index.html'); // cwd is wherever you called `electron start` from.
-  setWindow(_window);
+  // mainWindow.setMenu(null); // No system menu.
+  mainWindow.loadFile('dist/app/index.html'); // cwd is wherever you called `electron start` from.
+  setWindow(mainWindow);
+
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Content-Security-Policy': [''], // "default-src 'self' *" //'unsafe-inline', ???
+      },
+    });
+  });
+
+  doInspectorSetupOnStart();
 
   ipcMain.on('set-title', (event, title) => {
     const webContents = event.sender

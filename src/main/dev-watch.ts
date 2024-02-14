@@ -88,7 +88,7 @@ function watchDirectory(realDir, doOnHit)
     }).catch(err => console.error("Error prepopulating file sizes:", err));    
 }
 
-const init = function init() {
+export const init = function init() {
     watchDirectory(_appDir, (filename) => {
         // console.log("APP CHANGE", filename)
         

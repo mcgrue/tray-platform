@@ -1,14 +1,35 @@
-const http = require("http");
+// const http = require("http");
+import http from "http";
+import url from "url";
+import { getWindowContents } from "./renderer-window";
 
 export function createServer(portnumber: number) {
   // Create a simple HTTP server
-  const server = http.createServer((req, res) => {
-    // Respond to all GET requests with a simple message
-    if (req.method === "GET") {
-      res.writeHead(200, { "Content-Type": "text/plain" });
-      res.end("Hello from Electron's Main Process!");
-    }
-  });
+  const server = http.createServer(
+    (req: http.IncomingMessage, res: http.ServerResponse) => {
+      // Respond to all GET requests with a simple message
+      if (req.method === "GET") {
+        const parsedUrl = url.parse(req.url);
+
+        if (parsedUrl.href == "/favicon.ico") {
+          res.writeHead(404);
+          res.end("");
+          return;
+        }
+
+        if (parsedUrl.href == "/SDL_assert") {
+          getWindowContents().send("play-sound", "audio 1");
+        }
+
+        if (parsedUrl.href == "/DOCTEST") {
+          getWindowContents().send("play-sound", "audio 3");
+        }
+
+        res.writeHead(200, { "Content-Type": "text/plain" });
+        res.end("Hello from Electron's Main Process!");
+      }
+    },
+  );
 
   server.listen(portnumber, () => {
     console.log(`Server listening on port ${portnumber}`);

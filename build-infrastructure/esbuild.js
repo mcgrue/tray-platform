@@ -20,7 +20,7 @@ const minify = false;
       watch,
       metafile: true,
       platform: 'node',
-      entryPoints: ['src/main/index.ts'],
+      entryPoints: ['src/main/main.ts'],
       outfile: 'dist/main/index.js',
       external: ['electron'],
       plugins: [
@@ -75,7 +75,7 @@ const minify = false;
       watch,
       metafile: true,
       platform: 'browser',
-      entryPoints: ['src/app/index.ts'],
+      entryPoints: ['src/app/renderer.ts'],
       outfile: 'dist/app/index.js',
       // plugins: [
       //   extensionResolverPlugin(['coffee', 'jadelet']),

@@ -81,7 +81,7 @@ Write-Host "Watching directory $directoryToWatch for changes..."
 try {
     do {
         Wait-Event -Timeout 60
-    } while ($host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown").VirtualKeyCode -ne 27) # 27 is the virtual key code for ESC
+    } while (1) # 27 is the virtual key code for ESC
 } finally {
     # Cleanup
     Unregister-Event -SubscriptionId $changedEvent.Id

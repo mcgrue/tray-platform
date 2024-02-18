@@ -61,4 +61,18 @@ app.on("ready", (event) => {
     let win = BrowserWindow.fromWebContents(webContents) as any;
     (win as any).playSound(soundName);
   });
+
+  ipcMain.on("say-words", (event, text: string) => {
+    if (text.length == 0) {
+      return;
+    }
+
+    if (text.length > 255) {
+      text = text.substring(0, 255);
+    }
+
+    const webContents = event.sender;
+    let win = BrowserWindow.fromWebContents(webContents) as any;
+    (win as any).sayWords(text);
+  });
 });

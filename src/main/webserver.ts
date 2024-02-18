@@ -1,7 +1,7 @@
-// const http = require("http");
-import http from "http";
-import url from "url";
 import { getWindowContents } from "./renderer-window";
+import http from "http";
+
+import url from "url";
 
 export function createServer(portnumber: number) {
   // Create a simple HTTP server
@@ -9,7 +9,14 @@ export function createServer(portnumber: number) {
     (req: http.IncomingMessage, res: http.ServerResponse) => {
       // Respond to all GET requests with a simple message
       if (req.method === "GET") {
-        const parsedUrl = url.parse(req.url);
+        const parsedUrl = url.parse(req.url!, true);
+        const queryParams = parsedUrl.query;
+        const queryParamsDict: { [key: string]: string } = {};
+        for (const key in queryParams) {
+          if (Object.prototype.hasOwnProperty.call(queryParams, key)) {
+            queryParamsDict[key] = queryParams[key] as string;
+          }
+        }
 
         if (parsedUrl.href == "/favicon.ico") {
           res.writeHead(404);
@@ -17,16 +24,24 @@ export function createServer(portnumber: number) {
           return;
         }
 
+        if (queryParamsDict.say) {
+          getWindowContents().send("say-words", queryParamsDict.say);
+        }
+
         if (parsedUrl.href == "/SDL_assert") {
           getWindowContents().send("play-sound", "audio 1");
         }
 
-        if (parsedUrl.href == "/DOCTEST") {
+        if (parsedUrl.href == "/DOCTEST_ALL_TESTS_PASS") {
+          getWindowContents().send("play-sound", "audio 2");
+        }
+
+        if (parsedUrl.href == "/DOCTEST_ASSERT_FAIL") {
           getWindowContents().send("play-sound", "audio 3");
         }
 
         res.writeHead(200, { "Content-Type": "text/plain" });
-        res.end("Hello from Electron's Main Process!");
+        res.end("Hello from Electron's Main Process?");
       }
     },
   );

@@ -26,6 +26,10 @@ export function setupTray(): Electron.CrossProcessExports.Tray | null {
             click: () => getWindowContents().send("play-sound", "audio 3"),
             label: "Play Sound 3",
           },
+          {
+            click: () => getWindowContents().send("say-words", "butts"),
+            label: "Say butts",
+          },
         ],
       },
     ]);

@@ -12,4 +12,6 @@ contextBridge.exposeInMainWorld("ipcComms", {
     ipcRenderer.on("refresh-page", (_event, value) => callback(value)),
   onPlaySound: (callback) =>
     ipcRenderer.on("play-sound", (_event, value) => callback(value)),
+  onSayWords: (callback) =>
+    ipcRenderer.on("say-words", (_event, value) => callback(value)),
 });

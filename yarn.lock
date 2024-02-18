@@ -4151,6 +4151,11 @@ safe-buffer@~5.1.0, safe-buffer@~5.1.1:
   resolved "https://registry.yarnpkg.com/safer-buffer/-/safer-buffer-2.1.2.tgz#44fa161b0187b9549dd84bb91802f9bd8385cd6a"
   integrity sha512-YZo3K82SD7Riyi0E1EQPojLz7kpepnSQI9IyPbHHg1XXXevb5dJI7tpyN2ADxGcQbHG7vcyRHk0cbwqcQriUtg==
 
+sam-js@^0.2.1:
+  version "0.2.1"
+  resolved "https://registry.yarnpkg.com/sam-js/-/sam-js-0.2.1.tgz#dcb42c8f47069493e772dec5bcf3f30fae57f363"
+  integrity sha512-HAjsqnAaOUXKCOfwlTkorN7YRF9V/j+nyG+mnSuBMN9F+495eDU6mgejt4SG1Yay74aG5Enmp+sNPAy55DU53w==
+
 sanitize-filename@^1.6.3:
   version "1.6.3"
   resolved "https://registry.yarnpkg.com/sanitize-filename/-/sanitize-filename-1.6.3.tgz#755ebd752045931977e30b2025d340d7c9090378"

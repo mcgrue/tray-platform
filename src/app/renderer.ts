@@ -1,3 +1,11 @@
+import SamJs from "sam-js";
+
+let sam = new SamJs();
+
+function sayWords(words: string) {
+  sam.speak(words);
+}
+
 function playSound(id: string) {
   var audio = document.getElementById(id) as any;
   audio.play();
@@ -19,20 +27,22 @@ function create_audio(label: string, file: string): HTMLButtonElement {
   return button;
 }
 
-console.log("here I go, rendering again");
+console.log("here I go, rendering again!");
 
 try {
   const root = document.getElementsByTagName("body")[0];
-  const audio1 = create_audio("audio 1", "./resources/achievement-pop.wav");
+  const audio1 = create_audio("audio 1", "./resources/fail.wav");
   const audio2 = create_audio("audio 2", "./resources/sully-fanfare.ogg");
   const audio3 = create_audio(
     "audio 3",
     "./resources/you-did-something-yay.wav",
   );
+  const audio4 = create_audio("audio 4", "./resources/pass.wav");
 
   root.appendChild(audio1);
   root.appendChild(audio2);
   root.appendChild(audio3);
+  root.appendChild(audio4);
 } catch (e) {
   console.error(e);
   alert("error: " + e.message);
@@ -48,4 +58,8 @@ window["ipcComms"].onRefreshPage((value) => {
 
 window["ipcComms"].onPlaySound((value) => {
   playSound(value);
+});
+
+window["ipcComms"].onSayWords((value) => {
+  sayWords(value);
 });

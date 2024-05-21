@@ -38,11 +38,13 @@ try {
     "./resources/you-did-something-yay.wav",
   );
   const audio4 = create_audio("audio 4", "./resources/pass.wav");
+  const audio5 = create_audio("audio 5", "./resources/oh-oh-icq-sound.mp3");
 
   root.appendChild(audio1);
   root.appendChild(audio2);
   root.appendChild(audio3);
   root.appendChild(audio4);
+  root.appendChild(audio5);
 } catch (e) {
   console.error(e);
   alert("error: " + e.message);

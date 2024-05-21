@@ -98,6 +98,11 @@ export const init = function init() {
     console.log("MAIN CHANGE", filename);
 
     getWindow().webContents.send(
+      "say-words",
+      "Main Process code is out of date. Please quit and restart", // yup
+    );
+
+    getWindow().webContents.send(
       "show-alert",
       "Main Process code is out of date\n\nPlease quit and restart",
     );

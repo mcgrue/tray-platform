@@ -40,6 +40,10 @@ export function createServer(portnumber: number) {
           getWindowContents().send("play-sound", "audio 3");
         }
 
+        if (parsedUrl.href == "/CASS_ALERT") {
+          getWindowContents().send("play-sound", "audio 5");
+        }
+
         res.writeHead(200, { "Content-Type": "text/plain" });
         res.end("Hello from Electron's Main Process?");
       }

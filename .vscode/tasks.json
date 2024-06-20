@@ -1,0 +1,13 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Run command on start",
+      "type": "shell",
+      "command": "yarn start",
+      "runOptions": {
+        "runOn": "folderOpen"
+      }
+    }
+  ]
+}

@@ -39,12 +39,20 @@ try {
   );
   const audio4 = create_audio("audio 4", "./resources/pass.wav");
   const audio5 = create_audio("audio 5", "./resources/oh-oh-icq-sound.mp3");
+  const audio6 = create_audio(
+    "audio 6",
+    "./resources/old-aol-instant-messenger-aim-sound-effects-youtube.mp3",
+  );
+
+  const audio7 = create_audio("audio 7", "./resources/guitar-in-d-89205.mp3");
 
   root.appendChild(audio1);
   root.appendChild(audio2);
   root.appendChild(audio3);
   root.appendChild(audio4);
   root.appendChild(audio5);
+  root.appendChild(audio6);
+  root.appendChild(audio7);
 } catch (e) {
   console.error(e);
   alert("error: " + e.message);

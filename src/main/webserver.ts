@@ -44,6 +44,16 @@ export function createServer(portnumber: number) {
           getWindowContents().send("play-sound", "audio 5");
         }
 
+        // TODO - rachel alter
+        if (parsedUrl.href == "/AIM_ALERT") {
+          getWindowContents().send("play-sound", "audio 6");
+        }
+
+        // TODO - rachel alter
+        if (parsedUrl.href == "/MANNY_ALERT") {
+          getWindowContents().send("play-sound", "audio 7");
+        }
+
         res.writeHead(200, { "Content-Type": "text/plain" });
         res.end("Hello from Electron's Main Process?");
       }

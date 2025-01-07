@@ -13,12 +13,11 @@
     "noFallthroughCasesInSwitch": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
+    "outDir": "../main",
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "strict": true,
-    "target": "esnext",
-
-    "outDir": "../main"
+    "target": "esnext"
   },
   "exclude": ["node_modules/**"],
   "include": ["**/*.ts", "**/*.tsx", "**/*.js"]

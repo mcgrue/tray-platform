@@ -29,6 +29,22 @@ function create_audio(label: string, file: string): HTMLButtonElement {
 
 console.log("here I go, rendering again!");
 
+window["ipcComms"].onShowAlert((value) => {
+  alert(value);
+});
+
+window["ipcComms"].onRefreshPage((value) => {
+  location.reload();
+});
+
+window["ipcComms"].onPlaySound((value) => {
+  playSound(value);
+});
+
+window["ipcComms"].onSayWords((value) => {
+  sayWords(value);
+});
+
 try {
   const root = document.getElementsByTagName("body")[0];
   const audio1 = create_audio("audio 1", "./resources/fail.wav");
@@ -53,23 +69,9 @@ try {
   root.appendChild(audio5);
   root.appendChild(audio6);
   root.appendChild(audio7);
+
+  sayWords("System Tray Ready");
 } catch (e) {
   console.error(e);
   alert("error: " + e.message);
 }
-
-window["ipcComms"].onShowAlert((value) => {
-  alert(value);
-});
-
-window["ipcComms"].onRefreshPage((value) => {
-  location.reload();
-});
-
-window["ipcComms"].onPlaySound((value) => {
-  playSound(value);
-});
-
-window["ipcComms"].onSayWords((value) => {
-  sayWords(value);
-});

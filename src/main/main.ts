@@ -1,4 +1,4 @@
-import { BrowserWindow, ipcMain, app, session, Tray } from "electron";
+import { app, BrowserWindow, ipcMain, session, Tray } from "electron";
 import { setWindow } from "./renderer-window";
 import { doInspectorSetupOnStart } from "./dev-mode";
 import { setupTray } from "./tray";
@@ -68,6 +68,7 @@ app.on("ready", (event) => {
     }
 
     if (text.length > 255) {
+      c;
       text = text.substring(0, 255);
     }
 

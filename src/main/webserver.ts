@@ -40,7 +40,7 @@ export function createServer(portnumber: number) {
           getWindowContents().send("play-sound", "audio 3");
         }
 
-        if (parsedUrl.href == "/CASS_ALERT") {
+        if (parsedUrl.href == "/UH_OH") {
           getWindowContents().send("play-sound", "audio 5");
         }
 

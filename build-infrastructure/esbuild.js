@@ -44,6 +44,14 @@ const minify = false;
           },
           watch: true,
         }),
+        pluginCopy.copy({
+          resolveFrom: "cwd",
+          assets: {
+            from: ["./src/shared/*"],
+            to: ["./dist/shared"],
+          },
+          watch: true,
+        }),
       ],
     })
     .catch(function () {
@@ -88,6 +96,14 @@ const minify = false;
           assets: {
             from: ["./src/app/index.html"],
             to: ["./dist/app/index.html"],
+          },
+          watch: true,
+        }),
+        pluginCopy.copy({
+          resolveFrom: "cwd",
+          assets: {
+            from: ["./src/shared/*"],
+            to: ["./dist/shared"],
           },
           watch: true,
         }),

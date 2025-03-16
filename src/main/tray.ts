@@ -1,46 +1,39 @@
 const { app, Menu, Tray } = require("electron");
+import soundConfig from "../shared/sounds.json";
+import { type SoundConfig } from "../shared/types";
 import { getWindowContents } from "./renderer-window";
 
+const sounds = (soundConfig as SoundConfig).sounds;
+
+debugger;
+
 export function setupTray(): Electron.CrossProcessExports.Tray | null {
-  try {
-    const appIcon = new Tray(__dirname + "/resources/tray-icon.png");
-    const contextMenu = Menu.buildFromTemplate([
-      {
-        label: app.name,
-        submenu: [
-          {
-            click: () => {
-              try {
-                getWindowContents().send("play-sound", "audio 1");
-              } catch (e) {
-                console.error(e);
-              }
-            },
-            label: "Play Sound 1",
-          },
-          {
-            click: () => getWindowContents().send("play-sound", "audio 2"),
-            label: "Play Sound 2",
-          },
-          {
-            click: () => getWindowContents().send("play-sound", "audio 3"),
-            label: "Play Sound 3",
-          },
-          {
-            click: () => getWindowContents().send("say-words", "butts"),
-            label: "Say butts",
-          },
-        ],
-      },
-    ]);
+	try {
+		const appIcon = new Tray(__dirname + "/resources/tray-icon.png");
 
-    // Call this again for Linux because we modified the context menu
-    appIcon.setContextMenu(contextMenu);
-    return appIcon;
-  } catch (e) {
-    debugger;
-    console.error(e);
-  }
+		// Create menu items for each sound
+		const soundMenuItems = Object.entries(sounds).map(([key, sound]) => ({
+			label: `Play ${key}`,
+			click: () => getWindowContents().send("play-sound", sound.id),
+		}));
 
-  return null;
+		const contextMenu = Menu.buildFromTemplate([
+			{
+				label: app.name,
+				submenu: [
+					...soundMenuItems,
+					{
+						click: () => getWindowContents().send("say-words", "Hello!"),
+						label: "Say Hello",
+					},
+				],
+			},
+		]);
+
+		appIcon.setContextMenu(contextMenu);
+		return appIcon;
+	} catch (e) {
+		console.error(e);
+		return null;
+	}
 }

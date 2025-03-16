@@ -1,77 +1,62 @@
 import SamJs from "sam-js";
+import soundConfig from "../shared/sounds.json";
+import { SoundConfig } from "../shared/types";
 
 let sam = new SamJs();
+const sounds = (soundConfig as SoundConfig).sounds;
 
 function sayWords(words: string) {
-  sam.speak(words);
+	sam.speak(words);
 }
 
 function playSound(id: string) {
-  var audio = document.getElementById(id) as any;
-  audio.play();
+	var audio = document.getElementById(id) as HTMLAudioElement;
+	audio.play();
 }
 
-function create_audio(label: string, file: string): HTMLButtonElement {
-  const button = document.createElement("button");
-  button.onclick = () => {
-    playSound(label);
-  };
-  button.innerText = label;
+function create_audio(sound: { id: string; file: string }): HTMLButtonElement {
+	const button = document.createElement("button");
+	button.onclick = () => {
+		playSound(sound.id);
+	};
+	button.innerText = sound.id;
 
-  const audio = document.createElement("audio");
-  audio.src = file;
-  audio.id = label;
+	const audio = document.createElement("audio");
+	audio.src = sound.file;
+	audio.id = sound.id;
 
-  button.appendChild(audio);
-
-  return button;
+	button.appendChild(audio);
+	return button;
 }
 
 console.log("here I go, rendering again!");
 
+// Set up IPC handlers
 window["ipcComms"].onShowAlert((value) => {
-  alert(value);
+	alert(value);
 });
 
 window["ipcComms"].onRefreshPage((value) => {
-  location.reload();
+	location.reload();
 });
 
 window["ipcComms"].onPlaySound((value) => {
-  playSound(value);
+	playSound(value);
 });
 
 window["ipcComms"].onSayWords((value) => {
-  sayWords(value);
+	sayWords(value);
 });
 
 try {
-  const root = document.getElementsByTagName("body")[0];
-  const audio1 = create_audio("audio 1", "./resources/fail.wav");
-  const audio2 = create_audio("audio 2", "./resources/sully-fanfare.ogg");
-  const audio3 = create_audio(
-    "audio 3",
-    "./resources/you-did-something-yay.wav",
-  );
-  const audio4 = create_audio("audio 4", "./resources/pass.wav");
-  const audio5 = create_audio("audio 5", "./resources/oh-oh-icq-sound.mp3");
-  const audio6 = create_audio(
-    "audio 6",
-    "./resources/old-aol-instant-messenger-aim-sound-effects-youtube.mp3",
-  );
+	for (const key in sounds) {
+		const sound = sounds[key];
+		const button = create_audio(sound);
+		document.body.appendChild(button);
+	}
 
-  const audio7 = create_audio("audio 7", "./resources/guitar-in-d-89205.mp3");
-
-  root.appendChild(audio1);
-  root.appendChild(audio2);
-  root.appendChild(audio3);
-  root.appendChild(audio4);
-  root.appendChild(audio5);
-  root.appendChild(audio6);
-  root.appendChild(audio7);
-
-  sayWords("System Tray Ready");
+	sayWords("System Tray Ready");
 } catch (e) {
-  console.error(e);
-  alert("error: " + e.message);
+	console.error(e);
+	alert("error: " + e.message);
 }

@@ -1,0 +1,39 @@
+{
+	"sounds": {
+		"error": {
+			"id": "audio1",
+			"file": "./resources/fail.wav",
+			"description": "Error/failure sound"
+		},
+		"success": {
+			"id": "audio2",
+			"file": "./resources/sully-fanfare.ogg",
+			"description": "Success fanfare"
+		},
+		"achievement": {
+			"id": "audio3",
+			"file": "./resources/you-did-something-yay.wav",
+			"description": "Achievement unlocked"
+		},
+		"pass": {
+			"id": "audio4",
+			"file": "./resources/pass.wav",
+			"description": "Test passed"
+		},
+		"notification": {
+			"id": "audio5",
+			"file": "./resources/oh-oh-icq-sound.mp3",
+			"description": "ICQ-style notification"
+		},
+		"message": {
+			"id": "audio6",
+			"file": "./resources/old-aol-instant-messenger-aim-sound-effects-youtube.mp3",
+			"description": "AIM-style message"
+		},
+		"alert": {
+			"id": "audio7",
+			"file": "./resources/guitar-in-d-89205.mp3",
+			"description": "Guitar alert sound"
+		}
+	}
+}

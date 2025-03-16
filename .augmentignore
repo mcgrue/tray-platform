@@ -1,0 +1,38 @@
+# Environment and secrets
+.env
+.env.*
+*.pem
+*.key
+
+# Build outputs
+dist/
+electronbuild-resources/
+electronbuild-output/
+build/
+*.js.map
+
+# Dependencies
+node_modules/
+yarn-error.log
+npm-debug.log*
+yarn-debug.log*
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Debug and temporary files
+powershell-yarn-error.txt
+powershell-yarn-output.txt
+*.log
+*.tmp
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Electron specific
+.electron-symbols/

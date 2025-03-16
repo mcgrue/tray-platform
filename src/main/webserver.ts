@@ -1,8 +1,8 @@
-import { getWindowContents } from "./renderer-window";
 import http from "http";
 import url from "url";
 import soundConfig from "../shared/sounds.json";
 import { SoundConfig } from "../shared/types";
+import { getWindowContents } from "./renderer-window";
 
 const sounds = (soundConfig as SoundConfig).sounds;
 
@@ -30,14 +30,15 @@ export function createServer(portnumber: number) {
 				}
 
 				// Map endpoints to sound IDs
-				const endpointToSound = {
-					"/SDL_assert": sounds.error.id,
-					"/DOCTEST_ALL_TESTS_PASS": sounds.success.id,
-					"/DOCTEST_ASSERT_FAIL": sounds.achievement.id,
-					"/UH_OH": sounds.notification.id,
-					"/AIM_ALERT": sounds.message.id,
-					"/MANNY_ALERT": sounds.alert.id,
-				};
+				const endpointToSound = Object.entries(sounds).reduce(
+					(acc, [_, sound]) => {
+						sound.endpoints.forEach((endpoint) => {
+							acc[endpoint] = sound.id;
+						});
+						return acc;
+					},
+					{} as { [key: string]: string },
+				);
 
 				const soundId = endpointToSound[parsedUrl.href];
 				if (soundId) {

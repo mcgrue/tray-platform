@@ -1,39 +1,58 @@
 {
 	"sounds": {
 		"error": {
-			"id": "audio1",
+			"id": "fail",
 			"file": "./resources/fail.wav",
-			"description": "Error/failure sound"
+			"description": "Error/failure sound",
+			"endpoints": [
+				"/SDL_assert"
+			]
 		},
 		"success": {
-			"id": "audio2",
+			"id": "fanfare",
 			"file": "./resources/sully-fanfare.ogg",
-			"description": "Success fanfare"
+			"description": "Success fanfare",
+			"endpoints": [
+				"/DOCTEST_ALL_TESTS_PASS"
+			]
 		},
 		"achievement": {
-			"id": "audio3",
+			"id": "achievement",
 			"file": "./resources/you-did-something-yay.wav",
-			"description": "Achievement unlocked"
+			"description": "Achievement unlocked",
+			"endpoints": [
+				"/DOCTEST_ASSERT_FAIL"
+			]
 		},
 		"pass": {
-			"id": "audio4",
+			"id": "pass",
 			"file": "./resources/pass.wav",
-			"description": "Test passed"
+			"description": "Test passed",
+			"endpoints": []
 		},
 		"notification": {
-			"id": "audio5",
+			"id": "icq",
 			"file": "./resources/oh-oh-icq-sound.mp3",
-			"description": "ICQ-style notification"
+			"description": "ICQ-style notification",
+			"endpoints": [
+				"/UH_OH"
+			]
 		},
 		"message": {
-			"id": "audio6",
+			"id": "aim",
 			"file": "./resources/old-aol-instant-messenger-aim-sound-effects-youtube.mp3",
-			"description": "AIM-style message"
+			"description": "AIM-style message",
+			"endpoints": [
+				"/AIM_ALERT"
+			]
 		},
 		"alert": {
-			"id": "audio7",
+			"id": "guitar",
 			"file": "./resources/guitar-in-d-89205.mp3",
-			"description": "Guitar alert sound"
+			"description": "Guitar alert sound",
+			"endpoints": [
+				"/MANNY_ALERT"
+			]
 		}
 	}
 }

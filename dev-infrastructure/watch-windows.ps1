@@ -7,15 +7,26 @@ $directoryToWatch = Join-Path -Path $scriptDirectory -ChildPath "..\src"
 function global:ExecuteYarnCommand {
     $command = "yarn pre-build"
 
-    # Start the child process and capture its output
-    $childProcess = Start-Process powershell -PassThru -ArgumentList "-Command", $command -RedirectStandardOutput "powershell-yarn-output.txt" -RedirectStandardError "powershell-yarn-error.txt" -WindowStyle Hidden
-
-    # Wait for the child process to finish
-    Wait-Process -InputObject $childProcess
-
-    # Read the output files
-    $output = Get-Content "powershell-yarn-output.txt" 
-    $error_ = Get-Content "powershell-yarn-error.txt" 
+    # Create a new process with a clean environment
+    $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $startInfo.FileName = "powershell"
+    $startInfo.Arguments = "-Command $command"
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    $startInfo.UseShellExecute = $false
+    $startInfo.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
+    
+    # Start the process
+    $process = New-Object System.Diagnostics.Process
+    $process.StartInfo = $startInfo
+    $process.Start() | Out-Null
+    
+    # Capture output
+    $output = $process.StandardOutput.ReadToEnd()
+    $error_ = $process.StandardError.ReadToEnd()
+    
+    # Wait for the process to finish
+    $process.WaitForExit()
 
     if ($output -ne $null -and $output -ne "") {
         Write-Host $output -ForegroundColor Green
@@ -24,10 +35,7 @@ function global:ExecuteYarnCommand {
     }
     if ($error_ -ne $null -and $error_ -ne "") {
         Write-Host $error_ -ForegroundColor Magenta
-    } else {
-        # Write-Host "No yarn error?" -ForegroundColor Magenta
     }
-
 }
 
 

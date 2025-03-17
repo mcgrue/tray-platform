@@ -5,8 +5,6 @@ import { getWindowContents } from "./renderer-window";
 
 const sounds = (soundConfig as SoundConfig).sounds;
 
-debugger;
-
 export function setupTray(): Electron.CrossProcessExports.Tray | null {
 	try {
 		const appIcon = new Tray(__dirname + "/resources/tray-icon.png");

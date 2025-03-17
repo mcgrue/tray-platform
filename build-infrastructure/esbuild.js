@@ -1,24 +1,32 @@
 const esbuild = require("esbuild");
 const pluginCopy = require("esbuild-plugin-copy");
 
-// TODO: make these settable from args
+// Parse command line arguments
+const watch = process.argv.includes("--watch");
 const sourcemap = true;
-const watch = false;
 const minify = false;
+
+const commonConfig = {
+  tsconfig: "build-infrastructure/tsconfig.json",
+  bundle: true,
+  sourcemap,
+  minify,
+  watch: watch
+    ? {
+        onRebuild(error, result) {
+          if (error) console.error("watch build failed:", error);
+          else console.log("watch build succeeded");
+        },
+      }
+    : false,
+  metafile: true,
+};
 
 (async () => {
   /// server translation
   const result = await esbuild
     .build({
-      tsconfig: "build-infrastructure/tsconfig.json",
-
-      // logLevel: 'verbose',
-
-      bundle: true,
-      sourcemap,
-      minify,
-      watch,
-      metafile: true,
+      ...commonConfig,
       platform: "node",
       entryPoints: ["src/main/main.ts"],
       outfile: "dist/main/index.js",
@@ -66,15 +74,7 @@ const minify = false;
   /// client translation
   const result = await esbuild
     .build({
-      tsconfig: "build-infrastructure/tsconfig.json",
-
-      // logLevel: 'verbose',
-
-      bundle: true,
-      sourcemap,
-      minify,
-      watch,
-      metafile: true,
+      ...commonConfig,
       platform: "browser",
       entryPoints: ["src/app/renderer.ts"],
       outfile: "dist/app/index.js",

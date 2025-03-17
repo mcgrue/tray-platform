@@ -7,6 +7,13 @@ import { createServer } from "./webserver";
 const dotenv = require("dotenv").config();
 const path = require("node:path");
 
+const isWatchMode = process.env.WATCH_MODE === "true";
+
+if (isWatchMode) {
+	// Import the dev-watch module only in watch mode
+	require("./dev-watch").init();
+}
+
 let tray: Tray;
 
 let server = createServer(22222);

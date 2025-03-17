@@ -42,7 +42,7 @@ jobs:
           zip -r artifacts/ubuntu-electon-${{ steps.get_datetime.outputs.datetime_str }}-${{ github.sha }}.zip ./electronbuild-output
 
       - name: Save Ubuntu Artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: |
             ubuntu-electon-${{ steps.get_datetime.outputs.datetime_str }}-${{ github.sha }}.zip
@@ -86,7 +86,7 @@ jobs:
           dir .\artifacts\
 
       - name: Save Windows Artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: |
             win-electon-${{ steps.get_datetime.outputs.datetime_str }}-${{ github.sha }}.zip
@@ -124,7 +124,7 @@ jobs:
           zip -r artifacts/macos-electron-${{ steps.get_datetime.outputs.datetime_str }}-${{ github.sha }}.zip ./electronbuild-output
 
       - name: Save MacOS Artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: |
             macos-electron-${{ steps.get_datetime.outputs.datetime_str }}-${{ github.sha }}.zip

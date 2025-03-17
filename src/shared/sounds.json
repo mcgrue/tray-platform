@@ -53,6 +53,14 @@
 			"endpoints": [
 				"/MANNY_ALERT"
 			]
+		},
+		"taco": {
+			"id": "taco",
+			"file": "./resources/old-aol-instant-messenger-aim-sound-effects-youtube.mp3",
+			"description": "Guitar alert sound",
+			"endpoints": [
+				"/TACO"
+			]
 		}
 	}
 }

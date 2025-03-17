@@ -49,11 +49,27 @@ window["ipcComms"].onSayWords((value) => {
 });
 
 try {
+	// Existing sound buttons
 	for (const key in sounds) {
 		const sound = sounds[key];
 		const button = create_audio(sound);
 		document.body.appendChild(button);
 	}
+
+	// Only show config button if we're in dev mode
+	window["ipcComms"].isDevMode().then((isDevMode) => {
+		if (isDevMode) {
+			// Add config edit button
+			const configButton = document.createElement("button");
+			configButton.innerText = "Edit Sound Configuration";
+			configButton.style.display = "block";
+			configButton.style.marginTop = "20px";
+			configButton.onclick = () => {
+				window["ipcComms"].openSoundConfig();
+			};
+			document.body.appendChild(configButton);
+		}
+	});
 
 	sayWords("System Tray Ready");
 } catch (e) {

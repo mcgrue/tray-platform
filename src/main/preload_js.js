@@ -4,6 +4,8 @@ contextBridge.exposeInMainWorld("ipcComms", {
   // send's go to the main process
   setTitle: (title) => ipcRenderer.send("set-title", title),
   playSound: (id) => ipcRenderer.send("play-sound", id),
+  openSoundConfig: () => ipcRenderer.send("open-sound-config"),
+  isDevMode: () => ipcRenderer.invoke("is-dev-mode"),
 
   // on's come from the main process
   onShowAlert: (callback) =>

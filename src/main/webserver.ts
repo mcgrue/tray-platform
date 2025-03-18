@@ -40,7 +40,7 @@ export function createServer(portnumber: number) {
 					{} as { [key: string]: string },
 				);
 
-				const soundId = endpointToSound[parsedUrl.href];
+				const soundId = endpointToSound[parsedUrl.pathname!];
 				if (soundId) {
 					getWindowContents().send("play-sound", soundId);
 				}

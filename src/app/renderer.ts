@@ -11,6 +11,13 @@ function sayWords(words: string) {
 
 function playSound(id: string) {
 	var audio = document.getElementById(id) as HTMLAudioElement;
+
+	// if there's already audio playing: stop it
+	if (audio && !audio.paused) {
+		audio.pause();
+		audio.currentTime = 0;
+	}
+
 	audio.play();
 }
 

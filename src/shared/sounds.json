@@ -5,7 +5,9 @@
 			"file": "./resources/fail.wav",
 			"description": "Error/failure sound",
 			"endpoints": [
-				"/SDL_assert"
+				"/SDL_assert",
+				"/CRASH",
+				"/no"
 			]
 		},
 		"success": {

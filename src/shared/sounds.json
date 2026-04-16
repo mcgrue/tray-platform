@@ -26,6 +26,14 @@
 				"/DOCTEST_ASSERT_FAIL"
 			]
 		},
+		"mario": {
+			"id": "achievement",
+			"file": "./resources/you-did-something-yay.wav",
+			"description": "Achievement unlocked",
+			"endpoints": [
+				"/DOCTEST_ASSERT_FAIL"
+			]
+		},
 		"pass": {
 			"id": "pass",
 			"file": "./resources/pass.wav",

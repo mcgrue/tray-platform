@@ -31,7 +31,8 @@
 			"file": "./resources/you-did-something-yay.wav",
 			"description": "Achievement unlocked",
 			"endpoints": [
-				"/DOCTEST_ASSERT_FAIL"
+				"/DOCTEST_ASSERT_FAIL",
+				"/mario"
 			]
 		},
 		"pass": {
@@ -70,6 +71,14 @@
 			"description": "Guitar alert sound",
 			"endpoints": [
 				"/TACO"
+			]
+		},
+		"mac": {
+			"id": "mac",
+			"file": "./resources/quack.mp3",
+			"description": "mac quack alert sound",
+			"endpoints": [
+				"/MAC"
 			]
 		}
 	}

@@ -1,15 +1,31 @@
 <!doctype html>
 <html>
   <head>
+    <meta charset="utf-8" />
+    <title>Tray Platform</title>
     <meta
       http-equiv="Content-Security-Policy"
       content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self';"
     />
 
     <style>
-      body {
-        background-color: gray;
-      }
+      :root { color-scheme: dark; font: 15px/1.5 system-ui, sans-serif; background: #141923; color: #ecf0f8; }
+      body { max-width: 960px; margin: 0 auto; padding: 24px; }
+      h1, h2, h3 { line-height: 1.2; }
+      button, input, select, textarea { font: inherit; color: inherit; border: 1px solid #48546a; background: #232c3b; border-radius: 6px; padding: 7px 11px; }
+      button { cursor: pointer; margin: 3px; }
+      button:hover { background: #34425a; }
+      button:disabled { opacity: .5; cursor: default; }
+      button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid #91baff; outline-offset: 2px; }
+      input, textarea { box-sizing: border-box; max-width: 100%; }
+      textarea { width: 100%; min-height: 88px; }
+      article { background: #1c2432; padding: 16px; margin: 12px 0; border: 1px solid #344158; border-radius: 10px; }
+      p { overflow-wrap: anywhere; white-space: pre-wrap; }
+      [role="alert"] { color: #ffb5aa; }
+      button[aria-pressed="true"] { border-color: #91baff; background: #344768; }
+      #soundboard { border-top: 1px solid #344158; margin-top: 30px; padding-top: 14px; }
+      label { display: inline-block; margin: 5px; }
+      summary { cursor: pointer; }
     </style>
   </head>
   <body></body>

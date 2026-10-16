@@ -1,6 +1,18 @@
 const { contextBridge, ipcRenderer } = require("electron/renderer");
 
+function subscribe(channel, callback) {
+  const listener = (_event, value) => callback(value);
+  ipcRenderer.on(channel, listener);
+  return () => ipcRenderer.removeListener(channel, listener);
+}
+
 contextBridge.exposeInMainWorld("ipcComms", {
+  getAttention: () => ipcRenderer.invoke("attention-list"),
+  setAttentionState: (source, id, state, minutes) => ipcRenderer.invoke("attention-state", source, id, state, minutes),
+  goToAttention: (source, id) => ipcRenderer.invoke("attention-go", source, id),
+  setAttentionDestination: (source, id, destination) => ipcRenderer.invoke("attention-destination", source, id, destination),
+  listWindows: () => ipcRenderer.invoke("desktop-windows"),
+  onAttentionChanged: (callback) => subscribe("attention-changed", callback),
   // send's go to the main process
   setTitle: (title) => ipcRenderer.send("set-title", title),
   playSound: (id) => ipcRenderer.send("play-sound", id),
@@ -8,12 +20,8 @@ contextBridge.exposeInMainWorld("ipcComms", {
   isDevMode: () => ipcRenderer.invoke("is-dev-mode"),
 
   // on's come from the main process
-  onShowAlert: (callback) =>
-    ipcRenderer.on("show-alert", (_event, value) => callback(value)),
-  onRefreshPage: (callback) =>
-    ipcRenderer.on("refresh-page", (_event, value) => callback(value)),
-  onPlaySound: (callback) =>
-    ipcRenderer.on("play-sound", (_event, value) => callback(value)),
-  onSayWords: (callback) =>
-    ipcRenderer.on("say-words", (_event, value) => callback(value)),
+  onShowAlert: (callback) => subscribe("show-alert", callback),
+  onRefreshPage: (callback) => subscribe("refresh-page", callback),
+  onPlaySound: (callback) => subscribe("play-sound", callback),
+  onSayWords: (callback) => subscribe("say-words", callback),
 });

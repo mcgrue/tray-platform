@@ -1,6 +1,8 @@
 import SamJs from "sam-js";
 import soundConfig from "../shared/sounds.json";
 import { SoundConfig } from "../shared/types";
+import { AttentionBridge } from "../shared/attention";
+import { mountAttentionUI } from "./attention-ui";
 
 let sam = new SamJs();
 const sounds = (soundConfig as SoundConfig).sounds;
@@ -18,7 +20,7 @@ function playSound(id: string) {
 		audio.currentTime = 0;
 	}
 
-	audio.play();
+	if (audio) void audio.play().catch((error) => console.error("Sound playback failed:", error));
 }
 
 function create_audio(sound: { id: string; file: string }): HTMLButtonElement {
@@ -56,11 +58,22 @@ window["ipcComms"].onSayWords((value) => {
 });
 
 try {
+	const inboxRoot = document.createElement("main");
+	document.body.appendChild(inboxRoot);
+	const disposeInbox = mountAttentionUI(inboxRoot, window["ipcComms"] as AttentionBridge);
+	window.addEventListener("beforeunload", disposeInbox, { once: true });
+	const soundboard = document.createElement("section");
+	soundboard.id = "soundboard";
+	soundboard.setAttribute("aria-label", "Sound board");
+	const heading = document.createElement("h2");
+	heading.textContent = "Sound board";
+	soundboard.appendChild(heading);
+	document.body.appendChild(soundboard);
 	// Existing sound buttons
 	for (const key in sounds) {
 		const sound = sounds[key];
 		const button = create_audio(sound);
-		document.body.appendChild(button);
+		soundboard.appendChild(button);
 	}
 
 	// Only show config button if we're in dev mode
@@ -74,7 +87,7 @@ try {
 			configButton.onclick = () => {
 				window["ipcComms"].openSoundConfig();
 			};
-			document.body.appendChild(configButton);
+			soundboard.appendChild(configButton);
 		}
 	});
 

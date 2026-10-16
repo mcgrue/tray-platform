@@ -44,3 +44,23 @@ export interface AttentionBridge {
   listWindows(): Promise<WindowDestination[]>;
   onAttentionChanged(callback: (snapshot: AttentionSnapshot) => void): () => void;
 }
+
+export type ShortcutKey = "navigate" | "capture";
+export interface ShortcutSetting {
+  key: ShortcutKey;
+  accelerator: string;
+  registered: boolean;
+  error?: string;
+}
+export interface ShortcutSnapshot {
+  settings: ShortcutSetting[];
+  error?: string;
+}
+export interface NavigationBridge extends AttentionBridge {
+  getShortcuts(): Promise<ShortcutSnapshot>;
+  setShortcut(key: ShortcutKey, accelerator: string): Promise<void>;
+  navigatePending(): Promise<void>;
+  goToPending(source: string, id: string): Promise<void>;
+  onShortcutsChanged(callback: (snapshot: ShortcutSnapshot) => void): () => void;
+  onShowNavigation(callback: (message: { error?: string }) => void): () => void;
+}

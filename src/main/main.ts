@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell } from "electron";
+import { app, BrowserWindow, globalShortcut, ipcMain, shell } from "electron";
 import path from "path";
 import { AttentionService } from "./attention-service";
 import { createAttentionApi } from "./attention-api";
@@ -6,7 +6,9 @@ import { DesktopService } from "./desktop-service";
 import { setWindow } from "./renderer-window";
 import { setupTray } from "./tray";
 import { createServer } from "./webserver";
-import { AttentionState, Destination } from "../shared/attention";
+import { AttentionState, Destination, ShortcutKey } from "../shared/attention";
+import { ShortcutService } from "./shortcut-service";
+import { navigationDecision } from "./navigation";
 
 require("dotenv").config();
 
@@ -18,6 +20,7 @@ if (!singleInstance) app.quit();
 export const applicationReady = singleInstance ? app.whenReady().then(async () => {
   let rendererReady = false;
   let quitting = false;
+  let pendingNavigation: { error?: string } | undefined;
   const audioQueue: Array<{ channel: string; value: string }> = [];
   const mainWindow = new BrowserWindow({
     width: 920,
@@ -44,7 +47,33 @@ export const applicationReady = singleInstance ? app.whenReady().then(async () =
     mainWindow.show();
     mainWindow.focus();
   };
-  const tray = setupTray({ showInbox, quit: () => app.quit() });
+  const showNavigation = (error?: string) => {
+    showInbox();
+    if (!rendererReady) pendingNavigation = { error };
+    else mainWindow.webContents.send("navigation-show", { error });
+  };
+  const goToPending = async (source: string, id: string) => {
+    const item = attention.get(source, id);
+    if (!item || item.state !== "pending") throw new Error("This item is no longer pending");
+    if (!item.destination) throw new Error("Choose a destination in the inbox first");
+    await desktop.activate(item.destination);
+  };
+  let navigating = false;
+  const navigatePending = async () => {
+    if (navigating) return;
+    navigating = true;
+    try {
+      const decision = navigationDecision(attention.list().items);
+      if (decision.kind === "single" && decision.item.destination) {
+        await goToPending(decision.item.source, decision.item.id);
+      } else showNavigation();
+    } catch (error) { showNavigation(error instanceof Error ? error.message : String(error)); }
+    finally { navigating = false; }
+  };
+  const shortcuts = new ShortcutService(path.join(app.getPath("userData"), "shortcuts.json"), globalShortcut, [
+    { key: "navigate", defaultAccelerator: "Ctrl+Alt+Space", onInvoke: () => { void navigatePending(); } },
+  ]);
+  const tray = setupTray({ showInbox, navigate: () => { void navigatePending(); }, quit: () => app.quit() });
   const publish = () => {
     const snapshot = attention.list();
     const pending = snapshot.items.filter((item) => item.state === "pending").length;
@@ -52,6 +81,9 @@ export const applicationReady = singleInstance ? app.whenReady().then(async () =
     if (rendererReady && !mainWindow.isDestroyed()) mainWindow.webContents.send("attention-changed", snapshot);
   };
   const unsubscribe = attention.onChanged(publish);
+  const unsubscribeShortcuts = shortcuts.onChanged((snapshot) => {
+    if (rendererReady && !mainWindow.isDestroyed()) mainWindow.webContents.send("shortcuts-changed", snapshot);
+  });
   const findItem = (source: string, id: string) => {
     const item = attention.list().items.find((entry) => entry.source === source && entry.id === id);
     if (!item) throw new Error("Attention item no longer exists");
@@ -68,6 +100,10 @@ export const applicationReady = singleInstance ? app.whenReady().then(async () =
   ipcMain.handle("attention-destination", (_event, source: string, id: string, destination: Destination) =>
     attention.setDestination(source, id, destination));
   ipcMain.handle("desktop-windows", () => desktop.listWindows());
+  ipcMain.handle("shortcuts-list", () => shortcuts.list());
+  ipcMain.handle("shortcuts-set", (_event, key: ShortcutKey, accelerator: string) => shortcuts.set(key, accelerator));
+  ipcMain.handle("navigation-run", () => navigatePending());
+  ipcMain.handle("navigation-go", (_event, source: string, id: string) => goToPending(source, id));
   ipcMain.handle("is-dev-mode", () => Boolean(process.env.BREADITOR_DEV_MODE));
   ipcMain.on("set-title", (_event, title: string) => mainWindow.setTitle(String(title)));
   ipcMain.on("play-sound", (_event, id: string) => sendAudio("play-sound", String(id)));
@@ -83,6 +119,10 @@ export const applicationReady = singleInstance ? app.whenReady().then(async () =
     rendererReady = true;
     publish();
     for (const message of audioQueue.splice(0)) mainWindow.webContents.send(message.channel, message.value);
+    if (pendingNavigation) {
+      mainWindow.webContents.send("navigation-show", pendingNavigation);
+      pendingNavigation = undefined;
+    }
   });
   mainWindow.on("minimize", (event) => { event.preventDefault(); mainWindow.hide(); });
   mainWindow.on("close", (event) => {
@@ -91,6 +131,7 @@ export const applicationReady = singleInstance ? app.whenReady().then(async () =
   tray?.on("click", () => mainWindow.isVisible() ? mainWindow.hide() : showInbox());
   app.on("second-instance", showInbox);
   await mainWindow.loadFile(path.join(__dirname, "../app/index.html"));
+  await shortcuts.initialize();
   if (process.env.BREADITOR_DEV_MODE) showInbox();
   if (process.env.WATCH_MODE === "true") require("./dev-watch").init();
   if (process.env.BREADITOR_DEV_MODE) require("./dev-mode").doInspectorSetupOnStart();
@@ -104,11 +145,13 @@ export const applicationReady = singleInstance ? app.whenReady().then(async () =
   app.on("before-quit", () => {
     quitting = true;
     unsubscribe();
+    unsubscribeShortcuts();
+    shortcuts.close();
     attention.close();
     desktop.close();
     server.close();
   });
-  return { attention, desktop, mainWindow, server };
+  return { attention, desktop, mainWindow, server, shortcuts, navigatePending };
 }) : Promise.resolve(undefined);
 
 applicationReady.catch((error) => {

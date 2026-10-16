@@ -56,3 +56,15 @@ Validation: `yarn test --runInBand`, `yarn pre-build`, then
 `yarn electron dev-infrastructure/smoke-inbox.cjs` for isolated Electron/Windows
 acceptance. Clear `ELECTRON_RUN_AS_NODE` if it is set. Smoke data stays in a
 separate temporary user-data directory; the live inbox is not used.
+
+## Take me there
+
+Press `Ctrl+Alt+Space`, or choose **Take me there** in the tray menu. One pending
+item opens its destination; several show a chooser. Filter by title/source,
+use arrows to select, Enter to go, and Escape to close. Snoozed and Done items
+are excluded. Going to work keeps it pending until you explicitly mark Done.
+
+Change the binding under **Keyboard shortcuts** in the application. Requested
+bindings persist in `shortcuts.json`; registration conflicts are shown there,
+and the tray/menu button remains available. Validate with
+`yarn electron dev-infrastructure/smoke-navigation.cjs` after building.

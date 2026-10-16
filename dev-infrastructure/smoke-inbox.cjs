@@ -158,6 +158,6 @@ let failed = false;
 const watchdog = setTimeout(() => { console.error("Inbox smoke exceeded 100 seconds"); app.exit(1); }, 100000);
 run().catch(error => { failed = true; console.error(error); }).finally(() => {
   clearTimeout(watchdog);
-  process.exitCode = failed ? 1 : 0;
+  app.once("will-quit", () => app.exit(failed ? 1 : 0));
   app.quit();
 });

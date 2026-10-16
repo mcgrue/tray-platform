@@ -5,7 +5,7 @@ import { getWindowContents } from "./renderer-window";
 
 const sounds = (soundConfig as SoundConfig).sounds;
 
-export function setupTray(options: { showInbox: () => void; quit: () => void }): Electron.CrossProcessExports.Tray | null {
+export function setupTray(options: { showInbox: () => void; navigate: () => void; quit: () => void }): Electron.CrossProcessExports.Tray | null {
 	try {
 		const appIcon = new Tray(__dirname + "/resources/tray-icon.png");
 
@@ -17,6 +17,7 @@ export function setupTray(options: { showInbox: () => void; quit: () => void }):
 
 		const contextMenu = Menu.buildFromTemplate([
 			{ label: "Open attention inbox", click: options.showInbox },
+			{ label: "Take me there", click: options.navigate },
 			{ type: "separator" },
 			{
 				label: app.name,

@@ -1,8 +1,9 @@
 import SamJs from "sam-js";
 import soundConfig from "../shared/sounds.json";
 import { SoundConfig } from "../shared/types";
-import { AttentionBridge } from "../shared/attention";
+import { AttentionBridge, NavigationBridge } from "../shared/attention";
 import { mountAttentionUI } from "./attention-ui";
+import { mountNavigationUI } from "./navigation-ui";
 
 let sam = new SamJs();
 const sounds = (soundConfig as SoundConfig).sounds;
@@ -58,6 +59,11 @@ window["ipcComms"].onSayWords((value) => {
 });
 
 try {
+	const navigationRoot = document.createElement("section");
+	navigationRoot.id = "navigation";
+	document.body.appendChild(navigationRoot);
+	const disposeNavigation = mountNavigationUI(navigationRoot, window["ipcComms"] as NavigationBridge);
+	window.addEventListener("beforeunload", disposeNavigation, { once: true });
 	const inboxRoot = document.createElement("main");
 	document.body.appendChild(inboxRoot);
 	const disposeInbox = mountAttentionUI(inboxRoot, window["ipcComms"] as AttentionBridge);

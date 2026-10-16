@@ -7,6 +7,12 @@ function subscribe(channel, callback) {
 }
 
 contextBridge.exposeInMainWorld("ipcComms", {
+  getShortcuts: () => ipcRenderer.invoke("shortcuts-list"),
+  setShortcut: (key, accelerator) => ipcRenderer.invoke("shortcuts-set", key, accelerator),
+  navigatePending: () => ipcRenderer.invoke("navigation-run"),
+  goToPending: (source, id) => ipcRenderer.invoke("navigation-go", source, id),
+  onShortcutsChanged: (callback) => subscribe("shortcuts-changed", callback),
+  onShowNavigation: (callback) => subscribe("navigation-show", callback),
   getAttention: () => ipcRenderer.invoke("attention-list"),
   setAttentionState: (source, id, state, minutes) => ipcRenderer.invoke("attention-state", source, id, state, minutes),
   goToAttention: (source, id) => ipcRenderer.invoke("attention-go", source, id),

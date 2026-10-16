@@ -34,7 +34,11 @@ function errorText(error: unknown): string {
 }
 
 /** Mounts only its supplied root. Audio and other application panels remain untouched. */
-export function mountAttentionUI(root: HTMLElement, bridge: AttentionBridge): () => void {
+export interface AttentionUIOptions {
+  mountDetails?: (root: HTMLElement, item: AttentionItem) => { update(item: AttentionItem): void; dispose(): void };
+}
+
+export function mountAttentionUI(root: HTMLElement, bridge: AttentionBridge, options: AttentionUIOptions = {}): () => void {
   let disposed = false;
   let revision = 0;
   let active: AttentionState = "pending";
@@ -48,7 +52,7 @@ export function mountAttentionUI(root: HTMLElement, bridge: AttentionBridge): ()
   tabs.setAttribute("aria-label", "Attention views");
   const list = element("div");
   const empty = element("p");
-  const cards = new Map<string, { node: HTMLElement; update(item: AttentionItem): void }>();
+  const cards = new Map<string, { node: HTMLElement; update(item: AttentionItem): void; dispose(): void }>();
   const tabButtons = new Map<AttentionState, HTMLButtonElement>();
   (["pending", "snoozed", "done"] as AttentionState[]).forEach(state => {
     const tab = button(state[0].toUpperCase() + state.slice(1), () => { active = state; render(); });
@@ -136,6 +140,9 @@ export function mountAttentionUI(root: HTMLElement, bridge: AttentionBridge): ()
     editor.append(summary, form, windowLabel, discover, saveWindow);
     actions.append(go, snooze, snoozeAction, done, reopen);
     node.append(title, metadata, description, destination, actions, editor, failure);
+    const detailRoot = element("section");
+    node.appendChild(detailRoot);
+    const details = options.mountDetails?.(detailRoot, item);
 
     function refresh() {
       title.textContent = item.title;
@@ -154,7 +161,7 @@ export function mountAttentionUI(root: HTMLElement, bridge: AttentionBridge): ()
       if (!editor.open && document.activeElement !== url) url.value = item.destination?.kind === "url" ? item.destination.url : "";
     }
     refresh();
-    return { node, update(next: AttentionItem) { item = next; refresh(); } };
+    return { node, update(next: AttentionItem) { item = next; refresh(); details?.update(item); }, dispose() { details?.dispose(); } };
   }
 
   function render() {
@@ -170,7 +177,7 @@ export function mountAttentionUI(root: HTMLElement, bridge: AttentionBridge): ()
     const items = visibleAttentionItems(snapshot.items, active);
     empty.textContent = items.length ? "" : `No ${active} items.`;
     const existing = new Set(snapshot.items.map(attentionKey));
-    cards.forEach((entry, key) => { if (!existing.has(key)) { entry.node.remove(); cards.delete(key); } });
+    cards.forEach((entry, key) => { if (!existing.has(key)) { entry.dispose(); entry.node.remove(); cards.delete(key); } });
     const visible = new Set(items.map(attentionKey));
     cards.forEach((entry, key) => { entry.node.hidden = !visible.has(key); });
     items.forEach((item, index) => {
@@ -192,5 +199,5 @@ export function mountAttentionUI(root: HTMLElement, bridge: AttentionBridge): ()
     render();
   }).catch(reason => { if (!disposed && revision === initialRevision) { status.textContent = ""; error.textContent = errorText(reason); } });
 
-  return () => { disposed = true; unsubscribe(); root.replaceChildren(); };
+  return () => { disposed = true; unsubscribe(); cards.forEach(entry => entry.dispose()); cards.clear(); root.replaceChildren(); };
 }

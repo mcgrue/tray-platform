@@ -4,6 +4,8 @@ import { SoundConfig } from "../shared/types";
 import { AttentionBridge, NavigationBridge } from "../shared/attention";
 import { mountAttentionUI } from "./attention-ui";
 import { mountNavigationUI } from "./navigation-ui";
+import "../shared/bridge";
+import { createBookmarkUI } from "./bookmark-ui";
 
 let sam = new SamJs();
 const sounds = (soundConfig as SoundConfig).sounds;
@@ -59,15 +61,23 @@ window["ipcComms"].onSayWords((value) => {
 });
 
 try {
+	const bookmarks = createBookmarkUI(window.ipcComms);
 	const navigationRoot = document.createElement("section");
 	navigationRoot.id = "navigation";
 	document.body.appendChild(navigationRoot);
-	const disposeNavigation = mountNavigationUI(navigationRoot, window["ipcComms"] as NavigationBridge);
+	const disposeNavigation = mountNavigationUI(navigationRoot, window["ipcComms"] as NavigationBridge, {
+		resumeText: bookmarks.resumeText, onResumeChanged: bookmarks.onChanged,
+	});
 	window.addEventListener("beforeunload", disposeNavigation, { once: true });
 	const inboxRoot = document.createElement("main");
 	document.body.appendChild(inboxRoot);
-	const disposeInbox = mountAttentionUI(inboxRoot, window["ipcComms"] as AttentionBridge);
+	const disposeInbox = mountAttentionUI(inboxRoot, window["ipcComms"] as AttentionBridge, { mountDetails: bookmarks.mountAttentionDetails });
 	window.addEventListener("beforeunload", disposeInbox, { once: true });
+	const bookmarkRoot = document.createElement("section");
+	bookmarkRoot.id = "bookmarks";
+	document.body.appendChild(bookmarkRoot);
+	const disposeBookmarks = bookmarks.mount(bookmarkRoot);
+	window.addEventListener("beforeunload", () => { disposeBookmarks(); bookmarks.dispose(); }, { once: true });
 	const soundboard = document.createElement("section");
 	soundboard.id = "soundboard";
 	soundboard.setAttribute("aria-label", "Sound board");
@@ -100,5 +110,5 @@ try {
 	sayWords("System Tray Ready");
 } catch (e) {
 	console.error(e);
-	alert("error: " + e.message);
+	alert("error: " + (e instanceof Error ? e.message : String(e)));
 }

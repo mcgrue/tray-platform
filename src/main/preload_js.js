@@ -7,6 +7,12 @@ function subscribe(channel, callback) {
 }
 
 contextBridge.exposeInMainWorld("ipcComms", {
+  getBookmarks: () => ipcRenderer.invoke("bookmarks-list"),
+  saveBookmark: (source, id, input) => ipcRenderer.invoke("bookmarks-save", source, id, input),
+  goToBookmark: (source, id) => ipcRenderer.invoke("bookmarks-go", source, id),
+  captureBookmark: () => ipcRenderer.invoke("bookmarks-capture"),
+  onBookmarksChanged: (callback) => subscribe("bookmarks-changed", callback),
+  onCaptureBookmark: (callback) => subscribe("bookmark-capture", callback),
   getShortcuts: () => ipcRenderer.invoke("shortcuts-list"),
   setShortcut: (key, accelerator) => ipcRenderer.invoke("shortcuts-set", key, accelerator),
   navigatePending: () => ipcRenderer.invoke("navigation-run"),

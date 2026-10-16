@@ -18,7 +18,12 @@ function node<K extends keyof HTMLElementTagNameMap>(tag: K, text?: string): HTM
 }
 function errorText(error: unknown) { return error instanceof Error ? error.message : String(error); }
 
-export function mountNavigationUI(root: HTMLElement, bridge: NavigationBridge): () => void {
+export interface NavigationUIOptions {
+  resumeText?: (item: AttentionItem) => string;
+  onResumeChanged?: (callback: () => void) => () => void;
+}
+
+export function mountNavigationUI(root: HTMLElement, bridge: NavigationBridge, options: NavigationUIOptions = {}): () => void {
   let disposed = false, attentionRevision = 0, shortcutsRevision = 0, busy = false;
   let snapshot: AttentionSnapshot = { items: [] };
   let selected: string | undefined;
@@ -31,7 +36,11 @@ export function mountNavigationUI(root: HTMLElement, bridge: NavigationBridge): 
   const heading = node("h2", "Pending work");
   const label = node("label", "Find by title or source ");
   const filter = node("input"); filter.type = "search"; label.appendChild(filter);
+  filter.setAttribute("role", "combobox");
+  filter.setAttribute("aria-controls", "navigation-options");
+  filter.setAttribute("aria-expanded", "false");
   const list = node("div"); list.setAttribute("role", "listbox"); list.setAttribute("aria-label", "Pending items");
+  list.id = "navigation-options";
   const details = node("p"); details.style.whiteSpace = "pre-wrap";
   const message = node("p"); message.setAttribute("role", "alert");
   const go = node("button", "Go"); go.type = "button";
@@ -42,7 +51,7 @@ export function mountNavigationUI(root: HTMLElement, bridge: NavigationBridge): 
   chooser.append(heading, label, list, details, message, go, close);
   root.append(invoke, globalError, chooser, settings);
 
-  function hide() { chooser.hidden = true; if (previousFocus?.isConnected) previousFocus.focus(); }
+  function hide() { chooser.hidden = true; filter.setAttribute("aria-expanded", "false"); if (previousFocus?.isConnected) previousFocus.focus(); }
   function render() {
     if (disposed) return;
     const items = navigationItems(snapshot.items, filter.value);
@@ -58,7 +67,7 @@ export function mountNavigationUI(root: HTMLElement, bridge: NavigationBridge): 
     });
     const item = items.find(entry => attentionKey(entry) === selected);
     filter.setAttribute("aria-activedescendant", item ? `navigation-option-${items.indexOf(item)}` : "");
-    details.textContent = item ? [item.title, item.project, item.description, !item.destination ? "Choose a destination in the attention inbox below." : ""].filter(Boolean).join("\n") : snapshot.items.some(entry => entry.state === "pending") ? "No matching pending items." : "No pending items.";
+    details.textContent = item ? [item.title, item.project, item.description, options.resumeText?.(item), !item.destination ? "Choose a destination in the attention inbox below." : ""].filter(Boolean).join("\n") : snapshot.items.some(entry => entry.state === "pending") ? "No matching pending items." : "No pending items.";
     go.disabled = busy || !item?.destination;
     if (restoreListFocus && !chooser.hidden) filter.focus();
   }
@@ -103,7 +112,7 @@ export function mountNavigationUI(root: HTMLElement, bridge: NavigationBridge): 
       const changed = row.setting.accelerator !== setting.accelerator;
       row.setting = setting;
       if (changed || !row.input.value) row.input.value = setting.accelerator;
-      row.error.textContent = setting.registered ? "Registered" : `${setting.error || "Shortcut unavailable."} Use Take me there here or the tray menu.`;
+      row.error.textContent = setting.registered ? "Registered" : `${setting.error || "Shortcut unavailable."} Use the application buttons or tray menu.`;
     });
   }
   const unsubscribers = [
@@ -113,10 +122,12 @@ export function mountNavigationUI(root: HTMLElement, bridge: NavigationBridge): 
       if (disposed) return;
       if (chooser.hidden) previousFocus = document.activeElement as HTMLElement;
       chooser.hidden = false; filter.value = ""; selected = undefined; message.textContent = event.error || ""; render(); filter.focus();
+      filter.setAttribute("aria-expanded", "true");
     }),
   ];
   const initialAttention = attentionRevision, initialShortcuts = shortcutsRevision;
+  const unsubscribeResume = options.onResumeChanged?.(render);
   void bridge.getAttention().then(next => { if (!disposed && initialAttention === attentionRevision) { snapshot = next; render(); } }).catch(error => { if (!disposed) globalError.textContent = errorText(error); });
   void bridge.getShortcuts().then(next => { if (!disposed && initialShortcuts === shortcutsRevision) renderSettings(next); }).catch(error => { if (!disposed) settingsError.textContent = errorText(error); });
-  return () => { disposed = true; unsubscribers.forEach(unsubscribe => unsubscribe()); root.replaceChildren(); };
+  return () => { disposed = true; unsubscribers.forEach(unsubscribe => unsubscribe()); unsubscribeResume?.(); root.replaceChildren(); };
 }

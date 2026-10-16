@@ -68,3 +68,23 @@ Change the binding under **Keyboard shortcuts** in the application. Requested
 bindings persist in `shortcuts.json`; registration conflicts are shown there,
 and the tray/menu button remains available. Validate with
 `yarn electron dev-infrastructure/smoke-navigation.cjs` after building.
+
+## Context bookmarks
+
+Press `Ctrl+Alt+B` to capture the foreground window before the editor opens.
+Choose an attention item or enter a project, then write the next action. The
+capture shortcut is configurable alongside the navigation shortcut. Capture
+failures still allow a note without a destination. **Resume note** on an inbox
+item edits its context; **Context bookmarks** also supports standalone project
+notes, project filtering, Edit, and Go.
+
+Robots use `GET /api/bookmarks` and `PUT /api/bookmarks/:source/:id`. Creation
+requires a title and either `project` or `attention: { source, id }`; optional
+fields include `destination` and `robotHint`. Later PUTs may update individual
+fields. Human notes are edited through the UI; robot updates preserve them and
+reject `humanNote` in API requests. Human edits preserve robot hints. Completing
+an attention item keeps its notes, and the chooser displays its resume context.
+
+Bookmarks persist separately in `bookmarks.json` under the same user-data
+directory. Run `yarn electron dev-infrastructure/smoke-bookmarks.cjs` after
+building for isolated capture, notes, API, and restart acceptance checks.

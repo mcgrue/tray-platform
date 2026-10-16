@@ -9,6 +9,10 @@ import { createServer } from "./webserver";
 import { AttentionState, Destination, ShortcutKey } from "../shared/attention";
 import { ShortcutService } from "./shortcut-service";
 import { navigationDecision } from "./navigation";
+import { BookmarkService } from "./bookmark-service";
+import { createBookmarkApi } from "./bookmark-api";
+import { BookmarkCaptureService } from "./bookmark-capture";
+import { BookmarkCapture, BookmarkInput } from "../shared/bookmarks";
 
 require("dotenv").config();
 
@@ -21,6 +25,7 @@ export const applicationReady = singleInstance ? app.whenReady().then(async () =
   let rendererReady = false;
   let quitting = false;
   let pendingNavigation: { error?: string } | undefined;
+  let pendingCapture: BookmarkCapture | undefined;
   const audioQueue: Array<{ channel: string; value: string }> = [];
   const mainWindow = new BrowserWindow({
     width: 920,
@@ -41,6 +46,10 @@ export const applicationReady = singleInstance ? app.whenReady().then(async () =
     onSound: (id) => sendAudio("play-sound", id),
   });
   await attention.initialize();
+  const bookmarks = new BookmarkService(path.join(app.getPath("userData"), "bookmarks.json"), {
+    attentionExists: (source, id) => Boolean(attention.get(source, id)),
+  });
+  await bookmarks.initialize();
   const desktop = new DesktopService({ openUrl: (link) => shell.openExternal(link), appPid: process.pid });
   const showInbox = () => {
     if (mainWindow.isMinimized()) mainWindow.restore();
@@ -48,10 +57,21 @@ export const applicationReady = singleInstance ? app.whenReady().then(async () =
     mainWindow.focus();
   };
   const showNavigation = (error?: string) => {
+    if (quitting || mainWindow.isDestroyed()) return;
     showInbox();
     if (!rendererReady) pendingNavigation = { error };
     else mainWindow.webContents.send("navigation-show", { error });
   };
+  const capture = new BookmarkCaptureService({
+    captureForeground: () => desktop.captureForeground(),
+    showCapture: (context) => {
+      if (quitting || mainWindow.isDestroyed()) return;
+      showInbox();
+      if (!rendererReady) pendingCapture = context;
+      else mainWindow.webContents.send("bookmark-capture", context);
+    },
+  });
+  const captureBookmarks = () => capture.request();
   const goToPending = async (source: string, id: string) => {
     const item = attention.get(source, id);
     if (!item || item.state !== "pending") throw new Error("This item is no longer pending");
@@ -72,8 +92,9 @@ export const applicationReady = singleInstance ? app.whenReady().then(async () =
   };
   const shortcuts = new ShortcutService(path.join(app.getPath("userData"), "shortcuts.json"), globalShortcut, [
     { key: "navigate", defaultAccelerator: "Ctrl+Alt+Space", onInvoke: () => { void navigatePending(); } },
+    { key: "capture", defaultAccelerator: "Ctrl+Alt+B", onInvoke: () => { void captureBookmarks(); } },
   ]);
-  const tray = setupTray({ showInbox, navigate: () => { void navigatePending(); }, quit: () => app.quit() });
+  const tray = setupTray({ showInbox, navigate: () => { void navigatePending(); }, capture: () => { void captureBookmarks(); }, quit: () => app.quit() });
   const publish = () => {
     const snapshot = attention.list();
     const pending = snapshot.items.filter((item) => item.state === "pending").length;
@@ -83,6 +104,9 @@ export const applicationReady = singleInstance ? app.whenReady().then(async () =
   const unsubscribe = attention.onChanged(publish);
   const unsubscribeShortcuts = shortcuts.onChanged((snapshot) => {
     if (rendererReady && !mainWindow.isDestroyed()) mainWindow.webContents.send("shortcuts-changed", snapshot);
+  });
+  const unsubscribeBookmarks = bookmarks.onChanged((snapshot) => {
+    if (rendererReady && !mainWindow.isDestroyed()) mainWindow.webContents.send("bookmarks-changed", snapshot);
   });
   const findItem = (source: string, id: string) => {
     const item = attention.list().items.find((entry) => entry.source === source && entry.id === id);
@@ -104,6 +128,15 @@ export const applicationReady = singleInstance ? app.whenReady().then(async () =
   ipcMain.handle("shortcuts-set", (_event, key: ShortcutKey, accelerator: string) => shortcuts.set(key, accelerator));
   ipcMain.handle("navigation-run", () => navigatePending());
   ipcMain.handle("navigation-go", (_event, source: string, id: string) => goToPending(source, id));
+  ipcMain.handle("bookmarks-list", () => bookmarks.list());
+  ipcMain.handle("bookmarks-save", (_event, source: string, id: string, input: BookmarkInput) => bookmarks.saveHuman(source, id, input));
+  ipcMain.handle("bookmarks-go", async (_event, source: string, id: string) => {
+    const bookmark = bookmarks.get(source, id);
+    if (!bookmark) throw new Error("Bookmark no longer exists");
+    if (!bookmark.destination) throw new Error("This bookmark has no destination");
+    await desktop.activate(bookmark.destination);
+  });
+  ipcMain.handle("bookmarks-capture", () => captureBookmarks());
   ipcMain.handle("is-dev-mode", () => Boolean(process.env.BREADITOR_DEV_MODE));
   ipcMain.on("set-title", (_event, title: string) => mainWindow.setTitle(String(title)));
   ipcMain.on("play-sound", (_event, id: string) => sendAudio("play-sound", String(id)));
@@ -123,8 +156,12 @@ export const applicationReady = singleInstance ? app.whenReady().then(async () =
       mainWindow.webContents.send("navigation-show", pendingNavigation);
       pendingNavigation = undefined;
     }
+    if (pendingCapture) {
+      mainWindow.webContents.send("bookmark-capture", pendingCapture);
+      pendingCapture = undefined;
+    }
   });
-  mainWindow.on("minimize", (event) => { event.preventDefault(); mainWindow.hide(); });
+  mainWindow.on("minimize", () => mainWindow.hide());
   mainWindow.on("close", (event) => {
     if (!quitting) { event.preventDefault(); mainWindow.hide(); }
   });
@@ -137,8 +174,10 @@ export const applicationReady = singleInstance ? app.whenReady().then(async () =
   if (process.env.BREADITOR_DEV_MODE) require("./dev-mode").doInspectorSetupOnStart();
   publish();
 
+  const attentionApi = createAttentionApi({ attention, desktop });
+  const bookmarkApi = createBookmarkApi({ bookmarks });
   const server = createServer(Number(process.env.TRAY_PLATFORM_PORT || 22222), {
-    apiHandler: createAttentionApi({ attention, desktop }),
+    apiHandler: async (req, res) => await bookmarkApi(req, res) || await attentionApi(req, res),
     playSound: (id) => sendAudio("play-sound", id),
     sayWords: (text) => sendAudio("say-words", text),
   });
@@ -146,12 +185,14 @@ export const applicationReady = singleInstance ? app.whenReady().then(async () =
     quitting = true;
     unsubscribe();
     unsubscribeShortcuts();
+    unsubscribeBookmarks();
     shortcuts.close();
     attention.close();
+    bookmarks.close();
     desktop.close();
     server.close();
   });
-  return { attention, desktop, mainWindow, server, shortcuts, navigatePending };
+  return { attention, desktop, mainWindow, server, shortcuts, navigatePending, bookmarks, captureBookmarks };
 }) : Promise.resolve(undefined);
 
 applicationReady.catch((error) => {

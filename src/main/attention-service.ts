@@ -127,12 +127,13 @@ export class AttentionService {
     return () => { this.listeners.delete(callback); };
   }
 
-  upsert(source: string, id: string, input: AttentionInput): Promise<AttentionItem> {
+  upsert(source: string, id: string, input: AttentionInput, options: { createOnly?: boolean } = {}): Promise<AttentionItem> {
     return this.mutate(async items => {
       validateAttentionIdentity(source, id);
       const data = validateAttentionInput(input);
       const index = items.findIndex(item => item.source === source && item.id === id);
       const previous = items[index];
+      if (previous && options.createOnly) throw new AttentionError("Attention item already exists", 412);
       const now = this.now();
       const item: AttentionItem = { ...data, source, id, state: previous ? previous.state : "pending", createdAt: previous ? previous.createdAt : now, updatedAt: now, ...(previous && previous.snoozedUntil !== undefined ? { snoozedUntil: previous.snoozedUntil } : {}) };
       if (previous) items[index] = item; else items.push(item);

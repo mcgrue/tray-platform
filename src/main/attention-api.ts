@@ -72,7 +72,7 @@ export function createAttentionApi(options: { attention: AttentionService; deskt
         try { source = decodeURIComponent(match[1]); id = decodeURIComponent(match[2]); }
         catch { throw new AttentionError("Invalid URL encoding", 400); }
         if (!match[3] && req.method === "PUT") {
-          const item = await options.attention.upsert(source, id, await readJson(req));
+          const item = await options.attention.upsert(source, id, await readJson(req), { createOnly: req.headers["if-none-match"] === "*" });
           sendJson(res, 200, { item });
         } else if (match[3] && req.method === "POST") {
           const input = await readJson(req);

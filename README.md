@@ -52,6 +52,100 @@ sound/speech GET endpoints continue working and do not create inbox entries.
 Go opens HTTP(S) links or activates a chosen Windows window without completing
 the item. Closed/replaced windows must be selected again.
 
+For create-only delivery, send `If-None-Match: *` with the attention PUT. An
+existing source/id returns HTTP 412 without changing the entry, its timestamp,
+its selected destination, or its disposition. Ordinary PUT updates keep their
+existing behavior.
+
+## Codex question notifications
+
+### Install for your user
+
+Install once for each Codex user profile. CLI and VS Code sessions using the
+same Codex home share this setup across repositories. The default home is
+`~/.codex` (`%USERPROFILE%\.codex` on Windows); if `CODEX_HOME` is set, use that
+directory for every path below and run the installer with the same setting.
+
+1. With Node.js installed, run this from the tray-platform repository root:
+
+   ```powershell
+   node integrations/codex/install.cjs
+   ```
+
+   This copies the standalone bridge into `~/.codex/tray-platform/` and adds
+   one background `PreToolUse` hook to `~/.codex/hooks.json`. It preserves other
+   hooks and backs up files before replacing them. Re-running it updates the
+   bridge without adding a duplicate hook. The installer does not modify
+   `AGENTS.md` or grant hook trust.
+
+2. Open `/hooks` in the Codex CLI using that same profile. Review and trust the
+   Tray Platform `PreToolUse` command whose matcher is
+   `^request_user_input(_async)?$`. Confirm it is enabled and trusted. New or
+   changed hook definitions require review before they can run.
+
+3. Back up your existing `~/.codex/AGENTS.md`, then append the following section
+   while preserving its current instructions. If a non-empty
+   `~/.codex/AGENTS.override.md` already exists, update that active file instead;
+   it takes precedence over `AGENTS.md`. Do not create an override just for
+   this installation.
+
+   ```markdown
+   ## Questions requiring human input
+
+   - When you need a human decision, clarification, or missing information, use an available structured question tool, subject to its documented restrictions and the current session's instructions.
+   - Use request_user_input_async when available for questions during ongoing work. Use request_user_input when available and permitted by the current mode.
+   - Include enough project/task context in the question to identify the work from an attention notification.
+   - The user-level Tray Platform hook handles notification delivery for these tool calls. Do not also send a separate notification for the same question.
+   - Ask only when the answer is needed. Continue independent work while an asynchronous answer is pending.
+   - If neither question tool is available, ask in chat and note that the question was not submitted through the attention hook.
+   ```
+
+4. Keep tray-platform running on the same machine. After active work finishes,
+   reopen Codex sessions or start fresh sessions in each client so they load the
+   hook and global guidance. File edits do not inject instructions into an
+   already-running turn. Confirm a fresh session can summarize the new rule.
+
+5. In a scratch conversation, ask the agent to pose a choice using an available
+   structured question tool. Confirm one inbox entry with the correct question
+   and project, and one ICQ sound. Repeat from another repository/client to
+   verify user-level coverage. If no question tool is available, the instruction
+   alone cannot enable it; use a runtime/mode that exposes one.
+
+Separate `CODEX_HOME` profiles and other OS users need their own installation.
+WSL, containers, and remote agents also need configuration and connectivity
+appropriate to their environment; their loopback address may not reach the
+Windows tray process.
+
+See the official [global instruction discovery](https://learn.chatgpt.com/docs/agent-configuration/agents-md)
+and [hook configuration and trust](https://learn.chatgpt.com/docs/hooks) documentation.
+
+### Behavior and maintenance
+
+Both `request_user_input` and `request_user_input_async` create an inbox entry
+with the question, choices, project directory, and session/turn/call identifiers.
+Each new question plays one ICQ sound. Repeated delivery preserves the existing
+entry. Mark **Done** manually; answering in Codex does not clear it. Use the
+existing destination picker to associate a window; automatic navigation back
+to the originating conversation is not part of this bridge.
+
+Keep tray-platform running on the same machine. The default endpoint is
+`http://127.0.0.1:22222`; `TRAY_PLATFORM_ATTENTION_URL` can select another HTTP
+loopback origin/port. Remote hosts and redirects are not used. Failed delivery
+is logged to hook stderr, exits successfully, and is not queued for later.
+Ordinary questions written in chat, turn completions, and permission-approval
+prompts do not create entries through this bridge. Existing completion sounds
+and permission-approval hooks remain independent.
+
+After updating tray-platform, quit and reopen it to load API changes. Disable
+the Tray Platform hook in `/hooks` to stop question notifications.
+
+Validation: `yarn test --runInBand` and `yarn pre-build`. For the complete
+runtime-to-renderer smoke, set `CODEX_CLI` to the VS Code extension's bundled
+`codex.exe`, clear `ELECTRON_RUN_AS_NODE`, then run
+`yarn electron dev-infrastructure/smoke-codex.cjs`. It uses two real app-server
+processes with deterministic local response fixtures, isolated Codex homes and
+Electron data, and checks rendering, deduplication, sound requests, and Done.
+
 Validation: `yarn test --runInBand`, `yarn pre-build`, then
 `yarn electron dev-infrastructure/smoke-inbox.cjs` for isolated Electron/Windows
 acceptance. Clear `ELECTRON_RUN_AS_NODE` if it is set. Smoke data stays in a

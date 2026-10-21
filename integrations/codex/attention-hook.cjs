@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 // Standalone Codex command hook. No Electron runtime or npm dependencies needed.
 const http = require("http");
-const { createHash } = require("crypto");
+const path = require("path");
+const os = require("os");
+const { requestId, rememberRequest, isAnswered, resolveAnswered, handleAnswers } = require("./attention-answers.cjs");
 
 const ENDPOINT = "http://127.0.0.1:22222";
 const TIMEOUT_MS = 1500;
@@ -41,7 +43,7 @@ function toAttention(event) {
     });
     return { title, text: [(index + 1) + ". " + title, ...choices].join("\n") };
   });
-  const id = "question-" + createHash("sha256").update(JSON.stringify([session, turn, call])).digest("hex");
+  const id = requestId(session, turn, call);
   return {
     source: "codex",
     id,
@@ -67,8 +69,17 @@ function localEndpoint(value) {
 }
 
 function deliver(item, { endpoint = ENDPOINT, timeoutMs = TIMEOUT_MS } = {}) {
-  const url = new URL("/api/attention/" + item.source + "/" + item.id, localEndpoint(endpoint));
-  const body = JSON.stringify(item.body);
+  return request(item, { endpoint, timeoutMs });
+}
+
+function dismiss(item, options = {}) {
+  return request(item, { ...options, dismiss: true });
+}
+
+function request(item, { endpoint = ENDPOINT, timeoutMs = TIMEOUT_MS, dismiss: resolving = false } = {}) {
+  const url = new URL("/api/attention/" + encodeURIComponent(item.source) + "/" + encodeURIComponent(item.id) +
+    (resolving ? "/state" : ""), localEndpoint(endpoint));
+  const body = JSON.stringify(resolving ? { state: "done" } : item.body);
   return new Promise((resolve, reject) => {
     let settled = false;
     const finish = (error, value) => {
@@ -78,8 +89,8 @@ function deliver(item, { endpoint = ENDPOINT, timeoutMs = TIMEOUT_MS } = {}) {
       error ? reject(error) : resolve(value);
     };
     const req = http.request(url, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body), "If-None-Match": "*" },
+      method: resolving ? "POST" : "PUT",
+      headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body), ...(!resolving && { "If-None-Match": "*" }) },
     }, res => {
       const chunks = [];
       let size = 0;
@@ -93,13 +104,21 @@ function deliver(item, { endpoint = ENDPOINT, timeoutMs = TIMEOUT_MS } = {}) {
       res.on("end", () => {
         try {
           // Already delivered: preserve all human edits and the item's disposition.
-          if (res.statusCode === 412) { finish(null, null); return; }
+          if (!resolving && res.statusCode === 412) { finish(null, null); return; }
+          // The answer hook can beat the background creation hook. The durable
+          // answer marker lets creation finish the dismissal after its PUT.
+          if (resolving && res.statusCode === 404) { finish(null, false); return; }
           if (res.statusCode !== 200) throw new Error("Attention HTTP " + res.statusCode);
           let response;
           try { response = JSON.parse(Buffer.concat(chunks).toString("utf8")); }
           catch { throw new Error("Invalid attention response JSON"); }
-          if (response?.item?.source !== item.source || response?.item?.id !== item.id) throw new Error("Unexpected attention response");
-          finish(null, response.item);
+          if (resolving) {
+            if (response?.ok !== true) throw new Error("Unexpected attention response");
+            finish(null, true);
+          } else {
+            if (response?.item?.source !== item.source || response?.item?.id !== item.id) throw new Error("Unexpected attention response");
+            finish(null, response.item);
+          }
         } catch (error) { finish(error); }
       });
     });
@@ -146,13 +165,19 @@ function readInput(input, timeoutMs = TIMEOUT_MS) {
 async function run(input = process.stdin, options = {}) {
   const event = await readInput(input, options.timeoutMs);
   const item = toAttention(event);
-  if (!item) return { ignored: true };
-  await deliver(item, options);
+  if (!item) return handleAnswers(event, options, dismiss);
+  const correlation = rememberRequest(event, options);
+  const outgoing = isAnswered(correlation, options) ? { ...item, body: { ...item.body, sound: undefined } } : item;
+  await deliver(outgoing, options);
+  await resolveAnswered(correlation, options, dismiss);
   return { source: item.source, id: item.id };
 }
 
 if (require.main === module) {
-  run(process.stdin, { endpoint: process.env.TRAY_PLATFORM_ATTENTION_URL || ENDPOINT })
+  run(process.stdin, {
+    endpoint: process.env.TRAY_PLATFORM_ATTENTION_URL || ENDPOINT,
+    stateDirectory: path.join(process.env.CODEX_HOME || path.join(os.homedir(), ".codex"), "tray-platform", "question-state"),
+  })
     .catch(error => {
       // A missing tray process must not affect the agent or reveal question text in logs.
       const code = typeof error.code === "string" ? error.code : error.message;
@@ -161,4 +186,4 @@ if (require.main === module) {
     .finally(() => { process.exitCode = 0; });
 }
 
-module.exports = { toAttention, deliver, readInput, run, MATCHER, ENDPOINT, MAX_INPUT_BYTES };
+module.exports = { toAttention, deliver, dismiss, readInput, run, MATCHER, ENDPOINT, MAX_INPUT_BYTES };

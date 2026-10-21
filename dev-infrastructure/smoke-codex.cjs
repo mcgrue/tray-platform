@@ -38,34 +38,47 @@ async function run() {
   };
   // Count sound requests without making the isolated automated smoke audible.
   await evaluate(() => { HTMLMediaElement.prototype.play = () => Promise.resolve(); });
-  const results = await Promise.all([false, true].map(asynchronous => runQuestion({
-    cli: process.env.CODEX_CLI, endpoint, asynchronous,
-    title: asynchronous ? "Async bridge test?" : "Blocking bridge test?",
+  const cases = [
+    { asynchronous: false, title: "Blocking bridge test?" },
+    { asynchronous: true, title: "Async answer after completion?" },
+    { asynchronous: true, answerDuringTurn: true, title: "Async answer during active turn?" },
+  ];
+  const results = await Promise.all(cases.map(testCase => runQuestion({
+    cli: process.env.CODEX_CLI, endpoint, ...testCase,
     onQuestion: async event => {
       const expected = toAttention(event);
       await waitFor(() => attention.get(expected.source, expected.id), "hook delivery");
-      await waitFor(() => evaluate(title => Array.from(document.querySelectorAll("main article h3")).some(node => node.textContent === title),
+      await waitFor(() => evaluate(title => Array.from(document.querySelectorAll("main article:not([hidden]) h3")).some(node => node.textContent === title),
         expected.body.title), "question rendered");
       assert.equal(attention.get(expected.source, expected.id).state, "pending");
       assert.equal(mainWindow.isVisible(), false, "Notifications must not steal focus");
     },
+    onPartialAnswer: async event => {
+      const item = toAttention(event);
+      assert.equal(attention.get(item.source, item.id).state, "pending", "Unanswered questions keep the request pending");
+    },
+    onAnswered: async event => {
+      const item = toAttention(event);
+      await waitFor(() => attention.get(item.source, item.id)?.state === "done", "automatic Done after answer");
+      await waitFor(() => evaluate(title => !Array.from(document.querySelectorAll("main article:not([hidden]) h3")).some(node => node.textContent === title),
+        item.body.title), "answered question removed from pending view");
+      assert.equal(mainWindow.isVisible(), false, "Answer handling must not steal focus");
+    },
   })));
-  assert.equal(attention.list().items.length, 2, "Two independent runtime sessions create distinct entries");
-  assert.deepEqual(sounds, ["icq", "icq"], "One sound per question");
+  assert.equal(attention.list().items.length, 3, "Three independent runtime sessions create distinct entries");
+  assert.deepEqual(sounds, ["icq", "icq", "icq"], "One sound per request");
   await Promise.all(results.flatMap(result => Array.from({ length: 3 }, () => deliver(toAttention(result.event), { endpoint }))));
-  assert.equal(attention.list().items.length, 2);
-  assert.equal(sounds.length, 2, "Retries never replay the sound");
-  const item = toAttention(results[0].event);
-  await evaluate(title => {
-    const card = Array.from(document.querySelectorAll("main article")).find(node => node.querySelector("h3")?.textContent === title);
-    Array.from(card.querySelectorAll("button")).find(node => node.textContent === "Done").click();
-  }, item.body.title);
-  await waitFor(() => attention.get(item.source, item.id).state === "done", "manual Done");
-  await deliver(item, { endpoint });
-  assert.equal(attention.get(item.source, item.id).state, "done");
+  assert.equal(attention.list().items.length, 3);
+  assert.equal(sounds.length, 3, "Retries never replay the sound");
+  assert(attention.list().items.every(item => item.state === "done"));
+  await evaluate(() => {
+    Array.from(document.querySelectorAll('nav[aria-label="Attention views"] button')).find(node => node.textContent.startsWith("Done")).click();
+  });
+  await waitFor(() => evaluate(() => document.querySelectorAll("main article:not([hidden])").length === 3), "Done history rendered");
   const persisted = JSON.parse(fs.readFileSync(path.join(dataPath, "attention.json"), "utf8"));
-  assert.equal(persisted.items.length, 2);
-  console.log("PASS: two Codex runtimes -> async command hooks -> HTTP -> durable inbox -> rendered questions; one sound each, retry dedupe, manual Done, no focus change.");
+  assert.equal(persisted.items.length, 3);
+  assert(persisted.items.every(item => item.state === "done"));
+  console.log("PASS: three Codex runtimes -> command hooks -> HTTP -> rendered inbox; blocking and async answers auto-dismiss, partial replies stay pending, Done history persists, one sound each, retry dedupe, no focus change.");
   console.log(JSON.stringify({ dataPath, fixtures: results.map(result => result.evidence) }, null, 2));
 }
 const watchdog = setTimeout(() => { console.error("Codex smoke timed out"); app.exit(1); }, 90000);

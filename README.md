@@ -72,15 +72,18 @@ directory for every path below and run the installer with the same setting.
    node integrations/codex/install.cjs
    ```
 
-   This copies the standalone bridge into `~/.codex/tray-platform/` and adds
-   one background `PreToolUse` hook to `~/.codex/hooks.json`. It preserves other
+   This copies the bridge and its answer-correlation module into
+   `~/.codex/tray-platform/` and adds three background hooks to
+   `~/.codex/hooks.json`: `PreToolUse`, `PostToolUse`, and `UserPromptSubmit`. It preserves other
    hooks and backs up files before replacing them. Re-running it updates the
-   bridge without adding a duplicate hook. The installer does not modify
+   bridge and adds missing answer hooks without duplicating existing hooks. The installer does not modify
    `AGENTS.md` or grant hook trust.
 
 2. Open `/hooks` in the Codex CLI using that same profile. Review and trust the
-   Tray Platform `PreToolUse` command whose matcher is
-   `^request_user_input(_async)?$`. Confirm it is enabled and trusted. New or
+   Tray Platform commands: `PreToolUse` with matcher
+   `^request_user_input(_async)?$`, `PostToolUse` with matcher
+   `^request_user_input$`, and `UserPromptSubmit` without a matcher.
+   Confirm all three are enabled and trusted. New or
    changed hook definitions require review before they can run.
 
 3. Back up your existing `~/.codex/AGENTS.md`, then append the following section
@@ -101,13 +104,18 @@ directory for every path below and run the installer with the same setting.
    ```
 
 4. Keep tray-platform running on the same machine. After active work finishes,
-   reopen Codex sessions or start fresh sessions in each client so they load the
-   hook and global guidance. File edits do not inject instructions into an
-   already-running turn. Confirm a fresh session can summarize the new rule.
+   run **Developer: Reload Window** in each existing VS Code window, or restart
+   the Codex CLI, then resume the conversation. Existing Codex sessions retain
+   their loaded hook configuration: installing the answer hooks on disk does
+   not enable dismissal in those sessions, even on later turns. A newly started
+   session loads the new hooks. Reload after installing and trusting new hook
+   definitions; bridge-only script updates do not require this. Confirm a fresh
+   session can summarize the global question rule.
 
 5. In a scratch conversation, ask the agent to pose a choice using an available
    structured question tool. Confirm one inbox entry with the correct question
-   and project, and one ICQ sound. Repeat from another repository/client to
+   and project, and one ICQ sound. Answer every question in the request and
+   confirm its entry moves to **Done**. Repeat from another repository/client to
    verify user-level coverage. If no question tool is available, the instruction
    alone cannot enable it; use a runtime/mode that exposes one.
 
@@ -123,28 +131,50 @@ and [hook configuration and trust](https://learn.chatgpt.com/docs/hooks) documen
 
 Both `request_user_input` and `request_user_input_async` create an inbox entry
 with the question, choices, project directory, and session/turn/call identifiers.
-Each new question plays one ICQ sound. Repeated delivery preserves the existing
-entry. Mark **Done** manually; answering in Codex does not clear it. Use the
+Each new request plays one ICQ sound. Repeated delivery preserves the existing
+entry. Answering every question in a request automatically moves its entry to
+**Done**, preserving its history, title, and destination. Partial answers keep
+the request pending. You can still mark **Done** manually. Use the
 existing destination picker to associate a window; automatic navigation back
 to the originating conversation is not part of this bridge.
+
+Blocking answers are detected by `PostToolUse`. Async answers are detected by
+`UserPromptSubmit` when the client submits a structured
+`send_user_message_question_reply` envelope, during an active turn or in a later
+turn. The immediate async tool result (`accepted: true`) does not dismiss anything.
+During an active turn, dismissal follows Codex consuming the reply at its next
+input-processing boundary.
+Ordinary chat text is not treated as an answer. Matching uses the session, original
+call, question index, and a hash of the question; unrelated entries stay pending.
+Repeated answer delivery preserves an entry you manually reopened after dismissal.
+
+Correlation metadata lives in `~/.codex/tray-platform/question-state/`. It stores
+identifiers and question hashes, without question or answer text. Keep it across
+updates so replies can match earlier requests. Entries created before installing
+the answer hooks lack this metadata and may still need manual **Done**.
 
 Keep tray-platform running on the same machine. The default endpoint is
 `http://127.0.0.1:22222`; `TRAY_PLATFORM_ATTENTION_URL` can select another HTTP
 loopback origin/port. Remote hosts and redirects are not used. Failed delivery
-is logged to hook stderr, exits successfully, and is not queued for later.
+is logged to hook stderr and exits successfully. There is no background retry
+worker. Answer markers persist, so re-delivering the matching question or answer
+can complete a failed dismissal. Hooks tolerate answers racing question creation.
 Ordinary questions written in chat, turn completions, and permission-approval
 prompts do not create entries through this bridge. Existing completion sounds
 and permission-approval hooks remain independent.
 
 After updating tray-platform, quit and reopen it to load API changes. Disable
-the Tray Platform hook in `/hooks` to stop question notifications.
+the three Tray Platform hooks in `/hooks` to stop question notifications and
+automatic dismissal. After bridge-only updates, rerun the installer; no tray
+restart is needed.
 
 Validation: `yarn test --runInBand` and `yarn pre-build`. For the complete
 runtime-to-renderer smoke, set `CODEX_CLI` to the VS Code extension's bundled
 `codex.exe`, clear `ELECTRON_RUN_AS_NODE`, then run
-`yarn electron dev-infrastructure/smoke-codex.cjs`. It uses two real app-server
+`yarn electron dev-infrastructure/smoke-codex.cjs`. It uses three real app-server
 processes with deterministic local response fixtures, isolated Codex homes and
-Electron data, and checks rendering, deduplication, sound requests, and Done.
+Electron data, and checks rendering, deduplication, sound requests, blocking
+answers, partial async answers, async replies during/after a turn, and persisted Done history.
 
 Validation: `yarn test --runInBand`, `yarn pre-build`, then
 `yarn electron dev-infrastructure/smoke-inbox.cjs` for isolated Electron/Windows

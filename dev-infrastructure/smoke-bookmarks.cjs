@@ -4,6 +4,7 @@ const assert = require("assert").strict;
 const fs = require("fs"), os = require("os"), path = require("path"), http = require("http");
 const { spawn } = require("child_process");
 const { app, shell, globalShortcut } = require("electron");
+require("./smoke-environment.cjs");
 const restartIndex = process.argv.indexOf("--verify-restart");
 const restarting = restartIndex >= 0;
 const dataPath = restarting ? process.argv[restartIndex + 1] : fs.mkdtempSync(path.join(os.tmpdir(), "tray-platform-bookmarks-smoke-"));

@@ -20,10 +20,44 @@ ELECTRONBUILDER to take /dist/ and repackage
 
 ## Attention inbox
 
+Titlebar colors are loaded from `.env` at startup (see `.env.example`):
+
+```dotenv
+TRAY_PLATFORM_TITLEBAR_ACTIVE_COLOR="#344768"
+TRAY_PLATFORM_TITLEBAR_INACTIVE_COLOR="#232c3b"
+TRAY_PLATFORM_TITLEBAR_ACTIVE_TEXT_COLOR=""
+TRAY_PLATFORM_TITLEBAR_INACTIVE_TEXT_COLOR=""
+```
+
+Use quoted `#RRGGBB` colors. The optional text colors apply to title text and
+Windows/Linux window-control symbols. Leave either text color blank or unset to
+choose black or white for contrast in that state; macOS retains its traffic lights.
+Restart the app after changing these values. Smoke scripts set
+`TRAY_PLATFORM_SMOKETEST=1`, overriding both backgrounds to army olive `#4b5320`
+and both text colors to white. Window titles get the `smoketest - ` prefix,
+including after renderer reloads.
+After building, `yarn electron dev-infrastructure/smoke-titlebar.cjs` checks
+color overrides, focus-event updates, title changes, reloads, and close-to-tray.
+
 Run `yarn start` (or `yarn dev` for the existing watch workflow). The tray menu
 opens the inbox. Pending items support Go, Snooze, and Done; history supports
 Reopen. Closing the window keeps the tray process running; use its Quit command
 to exit. Data is stored in `attention.json` in Electron's user-data directory.
+
+New pending work opens a hidden or minimized inbox on its Pending view without
+taking keyboard focus. If the inbox is already visible but unfocused, the Windows
+tray icon blinks and its taskbar button flashes; on macOS the Dock icon bounces.
+The signal stops when you focus or hide the inbox, or the triggering items are
+completed or snoozed. An already focused inbox updates normally. Duplicate
+deliveries, metadata edits, and startup restoration do not alert; an expired
+snooze can alert again. Explicit tray/menu/shortcut actions still focus the app.
+After updating, quit and relaunch Tray Platform to load the new window behavior.
+
+Windows presentation check: `yarn pre-build`, then clear `ELECTRON_RUN_AS_NODE`
+and run `yarn electron dev-infrastructure/smoke-attention-presentation.cjs`.
+It checks native tray-image changes, hidden/minimized opening, and unchanged
+OS foreground with zero inbox focus events. macOS Dock calls have unit coverage;
+native bounce acceptance must be run on macOS.
 
 Robots can explicitly submit an attention item from this desktop:
 

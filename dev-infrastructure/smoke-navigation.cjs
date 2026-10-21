@@ -2,6 +2,7 @@
 const assert = require("assert").strict;
 const fs = require("fs"), os = require("os"), path = require("path");
 const { app, shell, globalShortcut } = require("electron");
+require("./smoke-environment.cjs");
 const dataPath = fs.mkdtempSync(path.join(os.tmpdir(), "tray-platform-navigation-smoke-"));
 app.setName(`Tray Platform navigation smoke ${process.pid}`);
 app.setPath("userData", dataPath);

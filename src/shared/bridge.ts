@@ -1,6 +1,7 @@
 import { BookmarkBridge } from "./bookmarks";
+import { TitlebarBridge } from "./titlebar";
 
-export interface PlatformBridge extends BookmarkBridge {
+export interface PlatformBridge extends BookmarkBridge, TitlebarBridge {
   setTitle(title: string): void;
   playSound(id: string): void;
   openSoundConfig(): void;

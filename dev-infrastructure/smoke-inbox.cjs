@@ -6,6 +6,7 @@ const os = require("os");
 const path = require("path");
 const http = require("http");
 const { app, shell } = require("electron");
+require("./smoke-environment.cjs");
 
 const dataPath = fs.mkdtempSync(path.join(os.tmpdir(), "tray-platform-inbox-smoke-"));
 app.setName(`Tray Platform inbox smoke ${process.pid}`);
@@ -68,11 +69,13 @@ async function run() {
   const hasState = state => attention.list().items.some(item => item.source === "smoke" && item.id === "build" && item.state === state);
 
   await waitFor("inbox and audio mount", () => evaluate(() => document.querySelector("main h2")?.textContent.includes("Attention inbox") && document.querySelectorAll("audio").length > 0));
-  assert.equal(mainWindow.isVisible(), false, "Incoming events must not show the application");
+  assert.equal(mainWindow.isVisible(), false, "Startup remains hidden until new work arrives");
   await evaluate(() => { window.__smokeOriginalAudio = document.querySelector("audio"); });
   let response = await request("PUT", "/api/attention/smoke/build", { title: "Smoke build", description: "Resume this task", destination: { kind: "url", url: "https://example.com/smoke" } });
   assert.equal(response.status, 200);
   await waitFor("created item rendered", () => visible("Smoke build"));
+  assert.equal(mainWindow.isVisible(), true, "Incoming events open the inbox");
+  assert.equal(mainWindow.isFocused(), false, "Incoming events must not steal focus");
   await click("Smoke build", "Go");
   await waitFor("URL Go reaches main process", () => opened.length === 1);
   assert.equal(opened[0], "https://example.com/smoke");
@@ -143,7 +146,8 @@ async function run() {
     const card = Array.from(document.querySelectorAll("main article")).find(node => node.querySelector("h3")?.textContent === "Missing destination");
     return card.querySelector('[role="alert"]').textContent;
   }), "", "Window discovery succeeds without changing focus");
-  assert.equal(mainWindow.isVisible(), false);
+  assert.equal(mainWindow.isVisible(), true);
+  assert.equal(mainWindow.isFocused(), false, "Window discovery must not steal focus");
 
   await new Promise(resolve => { mainWindow.webContents.once("did-finish-load", resolve); mainWindow.reload(); });
   await waitFor("reloaded inbox restores all items", () => evaluate(() => document.querySelectorAll("main article:not([hidden])").length === 3));

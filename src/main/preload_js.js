@@ -7,6 +7,9 @@ function subscribe(channel, callback) {
 }
 
 contextBridge.exposeInMainWorld("ipcComms", {
+  getTitlebar: () => ipcRenderer.invoke("titlebar-get"),
+  onTitlebarChanged: (callback) => subscribe("titlebar-changed", callback),
+  titlebarAction: (action) => ipcRenderer.send("titlebar-action", action),
   getBookmarks: () => ipcRenderer.invoke("bookmarks-list"),
   saveBookmark: (source, id, input) => ipcRenderer.invoke("bookmarks-save", source, id, input),
   goToBookmark: (source, id) => ipcRenderer.invoke("bookmarks-go", source, id),
@@ -25,6 +28,7 @@ contextBridge.exposeInMainWorld("ipcComms", {
   setAttentionDestination: (source, id, destination) => ipcRenderer.invoke("attention-destination", source, id, destination),
   listWindows: () => ipcRenderer.invoke("desktop-windows"),
   onAttentionChanged: (callback) => subscribe("attention-changed", callback),
+  onShowAttention: (callback) => subscribe("attention-show", callback),
   // send's go to the main process
   setTitle: (title) => ipcRenderer.send("set-title", title),
   playSound: (id) => ipcRenderer.send("play-sound", id),

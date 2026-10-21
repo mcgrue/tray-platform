@@ -192,6 +192,11 @@ export function mountAttentionUI(root: HTMLElement, bridge: AttentionBridge, opt
   }
 
   const unsubscribe = bridge.onAttentionChanged(next => { revision++; snapshot = next; render(); });
+  const unsubscribeShow = bridge.onShowAttention?.(() => {
+    active = "pending";
+    render();
+    root.scrollIntoView({ block: "start" });
+  });
   const initialRevision = revision;
   void bridge.getAttention().then(next => {
     if (disposed || revision !== initialRevision) return;
@@ -199,5 +204,5 @@ export function mountAttentionUI(root: HTMLElement, bridge: AttentionBridge, opt
     render();
   }).catch(reason => { if (!disposed && revision === initialRevision) { status.textContent = ""; error.textContent = errorText(reason); } });
 
-  return () => { disposed = true; unsubscribe(); cards.forEach(entry => entry.dispose()); cards.clear(); root.replaceChildren(); };
+  return () => { disposed = true; unsubscribe(); unsubscribeShow?.(); cards.forEach(entry => entry.dispose()); cards.clear(); root.replaceChildren(); };
 }

@@ -6,6 +6,10 @@ import { mountAttentionUI } from "./attention-ui";
 import { mountNavigationUI } from "./navigation-ui";
 import "../shared/bridge";
 import { createBookmarkUI } from "./bookmark-ui";
+import { mountTitlebar } from "./titlebar";
+
+const disposeTitlebar = mountTitlebar(document.getElementById("app-titlebar")!, window.ipcComms);
+window.addEventListener("beforeunload", disposeTitlebar, { once: true });
 
 let sam = new SamJs();
 const sounds = (soundConfig as SoundConfig).sounds;

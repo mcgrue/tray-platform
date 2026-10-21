@@ -4,6 +4,7 @@ const fs = require("fs");
 const path = require("path");
 const os = require("os");
 const { app } = require("electron");
+require("./smoke-environment.cjs");
 const { runQuestion } = require("./codex-question-fixture.cjs");
 const { toAttention, deliver } = require("../integrations/codex/attention-hook.cjs");
 
@@ -51,7 +52,8 @@ async function run() {
       await waitFor(() => evaluate(title => Array.from(document.querySelectorAll("main article:not([hidden]) h3")).some(node => node.textContent === title),
         expected.body.title), "question rendered");
       assert.equal(attention.get(expected.source, expected.id).state, "pending");
-      assert.equal(mainWindow.isVisible(), false, "Notifications must not steal focus");
+      assert.equal(mainWindow.isVisible(), true, "Notifications open the inbox");
+      assert.equal(mainWindow.isFocused(), false, "Notifications must not steal focus");
     },
     onPartialAnswer: async event => {
       const item = toAttention(event);
@@ -62,7 +64,8 @@ async function run() {
       await waitFor(() => attention.get(item.source, item.id)?.state === "done", "automatic Done after answer");
       await waitFor(() => evaluate(title => !Array.from(document.querySelectorAll("main article:not([hidden]) h3")).some(node => node.textContent === title),
         item.body.title), "answered question removed from pending view");
-      assert.equal(mainWindow.isVisible(), false, "Answer handling must not steal focus");
+      assert.equal(mainWindow.isVisible(), true, "Answers leave the inbox open");
+      assert.equal(mainWindow.isFocused(), false, "Answer handling must not steal focus");
     },
   })));
   assert.equal(attention.list().items.length, 3, "Three independent runtime sessions create distinct entries");

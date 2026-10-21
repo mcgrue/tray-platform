@@ -4,7 +4,8 @@ import { AttentionService } from "./attention-service";
 import { createAttentionApi } from "./attention-api";
 import { DesktopService } from "./desktop-service";
 import { setWindow } from "./renderer-window";
-import { setupTray } from "./tray";
+import { setupTray, trayAlertImages } from "./tray";
+import { AttentionPresentation } from "./attention-presentation";
 import { createServer } from "./webserver";
 import { AttentionState, Destination, ShortcutKey } from "../shared/attention";
 import { ShortcutService } from "./shortcut-service";
@@ -13,6 +14,8 @@ import { BookmarkService } from "./bookmark-service";
 import { createBookmarkApi } from "./bookmark-api";
 import { BookmarkCaptureService } from "./bookmark-capture";
 import { BookmarkCapture, BookmarkInput } from "../shared/bookmarks";
+import { TitlebarController, titlebarConfig, titlebarWindowOptions } from "./titlebar";
+import { TitlebarAction } from "../shared/titlebar";
 
 require("dotenv").config();
 
@@ -26,17 +29,21 @@ export const applicationReady = singleInstance ? app.whenReady().then(async () =
   let quitting = false;
   let pendingNavigation: { error?: string } | undefined;
   let pendingCapture: BookmarkCapture | undefined;
+  let pendingInboxReveal = false;
   const audioQueue: Array<{ channel: string; value: string }> = [];
+  const titlebarSettings = titlebarConfig(process.env);
   const mainWindow = new BrowserWindow({
     width: 920,
     height: 760,
     show: false,
+    ...titlebarWindowOptions(titlebarSettings, process.platform),
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
       preload: path.join(__dirname, "preload_js.js"),
     },
   });
+  const titlebar = new TitlebarController(mainWindow, titlebarSettings, process.platform);
   setWindow(mainWindow);
   const sendAudio = (channel: string, value: string) => {
     if (!rendererReady || mainWindow.isDestroyed()) audioQueue.push({ channel, value });
@@ -95,13 +102,31 @@ export const applicationReady = singleInstance ? app.whenReady().then(async () =
     { key: "capture", defaultAccelerator: "Ctrl+Alt+B", onInvoke: () => { void captureBookmarks(); } },
   ]);
   const tray = setupTray({ showInbox, navigate: () => { void navigatePending(); }, capture: () => { void captureBookmarks(); }, quit: () => app.quit() });
+  const trayImages = trayAlertImages();
+  const presentation = new AttentionPresentation({
+    window: mainWindow,
+    platform: process.platform,
+    dock: process.platform === "darwin" ? app.dock : undefined,
+    showPending: () => {
+      if (!rendererReady) pendingInboxReveal = true;
+      else mainWindow.webContents.send("attention-show");
+    },
+    setTrayAlert: active => {
+      if (tray && !tray.isDestroyed()) tray.setImage(active ? trayImages.alert : trayImages.normal);
+    },
+  }, attention.list());
+  mainWindow.on("focus", () => presentation.acknowledge());
+  mainWindow.on("hide", () => presentation.acknowledge());
   const publish = () => {
     const snapshot = attention.list();
     const pending = snapshot.items.filter((item) => item.state === "pending").length;
     if (tray) tray.setToolTip(`Tray Platform — ${pending} pending${snapshot.error ? " — storage error" : ""}`);
     if (rendererReady && !mainWindow.isDestroyed()) mainWindow.webContents.send("attention-changed", snapshot);
   };
-  const unsubscribe = attention.onChanged(publish);
+  const unsubscribe = attention.onChanged(snapshot => {
+    publish();
+    presentation.update(snapshot);
+  });
   const unsubscribeShortcuts = shortcuts.onChanged((snapshot) => {
     if (rendererReady && !mainWindow.isDestroyed()) mainWindow.webContents.send("shortcuts-changed", snapshot);
   });
@@ -138,7 +163,11 @@ export const applicationReady = singleInstance ? app.whenReady().then(async () =
   });
   ipcMain.handle("bookmarks-capture", () => captureBookmarks());
   ipcMain.handle("is-dev-mode", () => Boolean(process.env.BREADITOR_DEV_MODE));
-  ipcMain.on("set-title", (_event, title: string) => mainWindow.setTitle(String(title)));
+  ipcMain.on("set-title", (_event, title: string) => titlebar.setTitle(String(title)));
+  ipcMain.handle("titlebar-get", () => titlebar.state());
+  ipcMain.on("titlebar-action", (event, action: TitlebarAction) => {
+    if (event.sender === mainWindow.webContents) titlebar.action(action);
+  });
   ipcMain.on("play-sound", (_event, id: string) => sendAudio("play-sound", String(id)));
   ipcMain.on("say-words", (_event, text: string) => {
     if (text) sendAudio("say-words", String(text).slice(0, 255));
@@ -151,6 +180,10 @@ export const applicationReady = singleInstance ? app.whenReady().then(async () =
   mainWindow.webContents.on("did-finish-load", () => {
     rendererReady = true;
     publish();
+    if (pendingInboxReveal) {
+      mainWindow.webContents.send("attention-show");
+      pendingInboxReveal = false;
+    }
     for (const message of audioQueue.splice(0)) mainWindow.webContents.send(message.channel, message.value);
     if (pendingNavigation) {
       mainWindow.webContents.send("navigation-show", pendingNavigation);
@@ -165,7 +198,7 @@ export const applicationReady = singleInstance ? app.whenReady().then(async () =
   mainWindow.on("close", (event) => {
     if (!quitting) { event.preventDefault(); mainWindow.hide(); }
   });
-  tray?.on("click", () => mainWindow.isVisible() ? mainWindow.hide() : showInbox());
+  tray?.on("click", () => mainWindow.isVisible() && mainWindow.isFocused() ? mainWindow.hide() : showInbox());
   app.on("second-instance", showInbox);
   await mainWindow.loadFile(path.join(__dirname, "../app/index.html"));
   await shortcuts.initialize();
@@ -184,6 +217,7 @@ export const applicationReady = singleInstance ? app.whenReady().then(async () =
   app.on("before-quit", () => {
     quitting = true;
     unsubscribe();
+    presentation.close();
     unsubscribeShortcuts();
     unsubscribeBookmarks();
     shortcuts.close();
@@ -192,7 +226,7 @@ export const applicationReady = singleInstance ? app.whenReady().then(async () =
     desktop.close();
     server.close();
   });
-  return { attention, desktop, mainWindow, server, shortcuts, navigatePending, bookmarks, captureBookmarks };
+  return { attention, desktop, mainWindow, tray, server, shortcuts, navigatePending, bookmarks, captureBookmarks };
 }) : Promise.resolve(undefined);
 
 applicationReady.catch((error) => {

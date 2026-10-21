@@ -1,9 +1,10 @@
 import { spawn, ChildProcess } from "child_process";
 import * as path from "path";
 import { Destination, WindowDestination } from "../shared/attention";
+import { ProcessDescriptor } from "../shared/codex-instances";
 
 export interface DesktopRequest {
-  command: "list" | "foreground" | "activate";
+  command: "list" | "foreground" | "activate" | "processes";
   appPid: number;
   destination?: WindowDestination;
 }
@@ -25,7 +26,7 @@ export function isWindowDestination(value: unknown): value is WindowDestination 
     (item.title === undefined || typeof item.title === "string");
 }
 
-/** Windows automation is invoked only by explicit navigation/capture requests. */
+/** Read-only discovery plus explicit window navigation/capture requests. */
 export class DesktopService {
   private readonly children = new Set<ChildProcess>();
   private closed = false;
@@ -41,6 +42,19 @@ export class DesktopService {
       throw new Error("Window discovery returned invalid data. Try again.");
     }
     return result.filter(item => item.pid !== this.appPid);
+  }
+
+  async listProcesses(): Promise<ProcessDescriptor[]> {
+    const result = await this.request("processes");
+    if (!Array.isArray(result) || !result.every(item => item &&
+      Number.isSafeInteger(item.pid) && item.pid >= 0 &&
+      Number.isSafeInteger(item.parentPid) && item.parentPid >= 0 &&
+      typeof item.name === "string" && typeof item.startedAt === "string" &&
+      (item.executablePath === undefined || typeof item.executablePath === "string") &&
+      (item.commandLine === undefined || typeof item.commandLine === "string"))) {
+      throw new Error("Process discovery returned invalid data.");
+    }
+    return result;
   }
 
   async captureForeground(): Promise<WindowDestination | undefined> {

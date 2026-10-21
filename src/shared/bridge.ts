@@ -1,7 +1,8 @@
 import { BookmarkBridge } from "./bookmarks";
 import { TitlebarBridge } from "./titlebar";
+import { CodexInstancesBridge } from "./codex-instances";
 
-export interface PlatformBridge extends BookmarkBridge, TitlebarBridge {
+export interface PlatformBridge extends BookmarkBridge, TitlebarBridge, CodexInstancesBridge {
   setTitle(title: string): void;
   playSound(id: string): void;
   openSoundConfig(): void;

@@ -7,6 +7,7 @@ import { mountNavigationUI } from "./navigation-ui";
 import "../shared/bridge";
 import { createBookmarkUI } from "./bookmark-ui";
 import { mountTitlebar } from "./titlebar";
+import { mountCodexInstancesUI } from "./codex-instances-ui";
 
 const disposeTitlebar = mountTitlebar(document.getElementById("app-titlebar")!, window.ipcComms);
 window.addEventListener("beforeunload", disposeTitlebar, { once: true });
@@ -77,6 +78,11 @@ try {
 	document.body.appendChild(inboxRoot);
 	const disposeInbox = mountAttentionUI(inboxRoot, window["ipcComms"] as AttentionBridge, { mountDetails: bookmarks.mountAttentionDetails });
 	window.addEventListener("beforeunload", disposeInbox, { once: true });
+	const codexRoot = document.createElement("section");
+	codexRoot.id = "codex-instances";
+	document.body.appendChild(codexRoot);
+	const disposeCodex = mountCodexInstancesUI(codexRoot, window.ipcComms);
+	window.addEventListener("beforeunload", disposeCodex, { once: true });
 	const bookmarkRoot = document.createElement("section");
 	bookmarkRoot.id = "bookmarks";
 	document.body.appendChild(bookmarkRoot);

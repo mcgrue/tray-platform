@@ -7,6 +7,9 @@ function subscribe(channel, callback) {
 }
 
 contextBridge.exposeInMainWorld("ipcComms", {
+  getCodexInstances: () => ipcRenderer.invoke("codex-instances-list"),
+  refreshCodexInstances: () => ipcRenderer.invoke("codex-instances-refresh"),
+  onCodexInstancesChanged: (callback) => subscribe("codex-instances-changed", callback),
   getTitlebar: () => ipcRenderer.invoke("titlebar-get"),
   onTitlebarChanged: (callback) => subscribe("titlebar-changed", callback),
   titlebarAction: (action) => ipcRenderer.send("titlebar-action", action),

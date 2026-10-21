@@ -44,6 +44,17 @@ public static class TrayDesktopNative {
     }
 
     switch ($request.command) {
+        'processes' {
+            $result = @(Get-CimInstance Win32_Process | ForEach-Object {
+                $entry = @{ pid = [int]$_.ProcessId; parentPid = [int]$_.ParentProcessId; name = $_.Name; startedAt = '' }
+                if ($_.CreationDate) { $entry.startedAt = $_.CreationDate.ToUniversalTime().ToString('o') }
+                if ($_.Name -match '^(Code|Code - Insiders|vscode|codex)\.exe$') {
+                    if ($_.ExecutablePath) { $entry.executablePath = $_.ExecutablePath }
+                    if ($_.CommandLine) { $entry.commandLine = $_.CommandLine }
+                }
+                $entry
+            })
+        }
         'list' {
             $windows = New-Object System.Collections.Generic.List[object]
             $callback = [TrayDesktopNative+EnumWindowsProc] {

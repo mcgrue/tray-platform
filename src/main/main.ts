@@ -16,6 +16,9 @@ import { BookmarkCaptureService } from "./bookmark-capture";
 import { BookmarkCapture, BookmarkInput } from "../shared/bookmarks";
 import { TitlebarController, titlebarConfig, titlebarWindowOptions } from "./titlebar";
 import { TitlebarAction } from "../shared/titlebar";
+import { CodexDiscovery } from "./codex-discovery";
+import { CodexInstanceService } from "./codex-instance-service";
+import { createCodexInstancesApi } from "./codex-instances-api";
 
 require("dotenv").config();
 
@@ -58,6 +61,12 @@ export const applicationReady = singleInstance ? app.whenReady().then(async () =
   });
   await bookmarks.initialize();
   const desktop = new DesktopService({ openUrl: (link) => shell.openExternal(link), appPid: process.pid });
+  const codexDiscovery = new CodexDiscovery(desktop);
+  const codexInstances = new CodexInstanceService({ scan: () => codexDiscovery.scan() });
+  const unsubscribeCodex = codexInstances.onChanged(snapshot => {
+    if (rendererReady && !mainWindow.isDestroyed()) mainWindow.webContents.send("codex-instances-changed", snapshot);
+  });
+  codexInstances.start();
   const showInbox = () => {
     if (mainWindow.isMinimized()) mainWindow.restore();
     mainWindow.show();
@@ -149,6 +158,8 @@ export const applicationReady = singleInstance ? app.whenReady().then(async () =
   ipcMain.handle("attention-destination", (_event, source: string, id: string, destination: Destination) =>
     attention.setDestination(source, id, destination));
   ipcMain.handle("desktop-windows", () => desktop.listWindows());
+  ipcMain.handle("codex-instances-list", () => codexInstances.list());
+  ipcMain.handle("codex-instances-refresh", () => codexInstances.refresh());
   ipcMain.handle("shortcuts-list", () => shortcuts.list());
   ipcMain.handle("shortcuts-set", (_event, key: ShortcutKey, accelerator: string) => shortcuts.set(key, accelerator));
   ipcMain.handle("navigation-run", () => navigatePending());
@@ -210,8 +221,9 @@ export const applicationReady = singleInstance ? app.whenReady().then(async () =
 
   const attentionApi = createAttentionApi({ attention, desktop });
   const bookmarkApi = createBookmarkApi({ bookmarks });
+  const codexApi = createCodexInstancesApi(codexInstances);
   const server = createServer(Number(process.env.TRAY_PLATFORM_PORT || 22222), {
-    apiHandler: async (req, res) => await bookmarkApi(req, res) || await attentionApi(req, res),
+    apiHandler: async (req, res) => await codexApi(req, res) || await bookmarkApi(req, res) || await attentionApi(req, res),
     playSound: (id) => sendAudio("play-sound", id),
     sayWords: (text) => sendAudio("say-words", text),
   });
@@ -221,13 +233,16 @@ export const applicationReady = singleInstance ? app.whenReady().then(async () =
     presentation.close();
     unsubscribeShortcuts();
     unsubscribeBookmarks();
+    unsubscribeCodex();
+    codexInstances.close();
+    codexDiscovery.close();
     shortcuts.close();
     attention.close();
     bookmarks.close();
     desktop.close();
     server.close();
   });
-  return { attention, desktop, mainWindow, tray, server, shortcuts, navigatePending, bookmarks, captureBookmarks };
+  return { attention, desktop, mainWindow, tray, server, shortcuts, navigatePending, bookmarks, captureBookmarks, codexInstances };
 }) : Promise.resolve(undefined);
 
 applicationReady.catch((error) => {

@@ -39,8 +39,9 @@ including after renderer reloads.
 After building, `yarn electron dev-infrastructure/smoke-titlebar.cjs` checks
 color overrides, focus-event updates, title changes, reloads, and close-to-tray.
 
-Run `yarn start` (or `yarn dev` for the existing watch workflow). The tray menu
-opens the inbox. Pending items support Go, Snooze, and Done; history supports
+Run `yarn start` (or `yarn dev` for the existing watch workflow). Double-click the
+tray icon to open or focus the inbox, or open it from the tray menu.
+Pending items support Go, Snooze, and Done; history supports
 Reopen. Closing the window keeps the tray process running; use its Quit command
 to exit. Data is stored in `attention.json` in Electron's user-data directory.
 

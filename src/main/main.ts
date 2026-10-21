@@ -199,6 +199,7 @@ export const applicationReady = singleInstance ? app.whenReady().then(async () =
     if (!quitting) { event.preventDefault(); mainWindow.hide(); }
   });
   tray?.on("click", () => mainWindow.isVisible() && mainWindow.isFocused() ? mainWindow.hide() : showInbox());
+  tray?.on("double-click", showInbox);
   app.on("second-instance", showInbox);
   await mainWindow.loadFile(path.join(__dirname, "../app/index.html"));
   await shortcuts.initialize();

@@ -69,7 +69,9 @@ async function run() {
   const hasState = state => attention.list().items.some(item => item.source === "smoke" && item.id === "build" && item.state === state);
 
   await waitFor("inbox and audio mount", () => evaluate(() => document.querySelector("main h2")?.textContent.includes("Attention inbox") && document.querySelectorAll("audio").length > 0));
-  assert.equal(mainWindow.isVisible(), false, "Startup remains hidden until new work arrives");
+  assert.equal(mainWindow.isVisible(), true, "Startup opens the attention inbox");
+  mainWindow.hide();
+  await waitFor("hidden inbox loses focus", () => !mainWindow.isVisible() && !mainWindow.isFocused());
   await evaluate(() => { window.__smokeOriginalAudio = document.querySelector("audio"); });
   let response = await request("PUT", "/api/attention/smoke/build", { title: "Smoke build", description: "Resume this task", destination: { kind: "url", url: "https://example.com/smoke" } });
   assert.equal(response.status, 200);

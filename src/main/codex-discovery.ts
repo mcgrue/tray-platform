@@ -3,6 +3,7 @@ import { promises as fs } from "fs";
 import path from "path";
 import { CodexInstance, ProcessDescriptor } from "../shared/codex-instances";
 import { CodexScanResult } from "./codex-instance-service";
+import { CodexFileUpdates } from "./workspace-file-updates";
 
 const isCode = (name: string) => /^(code|code - insiders|vscode)\.exe$/i.test(name);
 
@@ -102,9 +103,13 @@ async function tail(file: string): Promise<string> {
 /** Windows discovery only; no Codex RPCs, prompts, or process mutations. */
 export class CodexDiscovery {
   private readonly children = new Set<ChildProcess>();
+  private readonly fileUpdates: Pick<CodexFileUpdates, "enrich" | "close">;
   private closed = false;
 
-  constructor(private readonly desktop: { listProcesses(): Promise<ProcessDescriptor[]> }) {}
+  constructor(private readonly desktop: { listProcesses(): Promise<ProcessDescriptor[]> },
+    fileUpdates: Pick<CodexFileUpdates, "enrich" | "close"> = new CodexFileUpdates()) {
+    this.fileUpdates = fileUpdates;
+  }
 
   async scan(): Promise<CodexScanResult> {
     if (this.closed) throw new Error("Codex discovery is closed.");
@@ -138,12 +143,14 @@ export class CodexDiscovery {
         });
       }
     }
+    await this.fileUpdates.enrich(instances);
     instances.sort((a, b) => (a.title || "").localeCompare(b.title || "") || a.codexPid - b.codexPid);
     return { instances, ...(warnings.length ? { warning: warnings.join(" ") } : {}) };
   }
 
   close(): void {
     this.closed = true;
+    this.fileUpdates.close();
     this.children.forEach(child => child.kill());
     this.children.clear();
   }

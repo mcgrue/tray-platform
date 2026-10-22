@@ -4,7 +4,7 @@ import { AttentionService } from "./attention-service";
 import { createAttentionApi } from "./attention-api";
 import { DesktopService } from "./desktop-service";
 import { setWindow } from "./renderer-window";
-import { setupTray, trayAlertImages } from "./tray";
+import { setupTray, trayAlertImages, trayIconPath } from "./tray";
 import { AttentionPresentation } from "./attention-presentation";
 import { createServer } from "./webserver";
 import { AttentionItem, AttentionState, canNavigateAttention, Destination, ShortcutKey } from "../shared/attention";
@@ -20,6 +20,8 @@ import { CodexDiscovery } from "./codex-discovery";
 import { CodexInstanceService } from "./codex-instance-service";
 import { createCodexInstancesApi } from "./codex-instances-api";
 import { CodexAttention } from "./codex-attention";
+import { CodexMessageService } from "./codex-message-service";
+import { CodexQuestionService } from "./codex-question-service";
 
 require("dotenv").config();
 
@@ -40,6 +42,7 @@ export const applicationReady = singleInstance ? app.whenReady().then(async () =
     width: 920,
     height: 760,
     show: false,
+    icon: trayIconPath,
     ...titlebarWindowOptions(titlebarSettings, process.platform),
     webPreferences: {
       contextIsolation: true,
@@ -65,6 +68,8 @@ export const applicationReady = singleInstance ? app.whenReady().then(async () =
   const codexDiscovery = new CodexDiscovery(desktop);
   const codexInstances = new CodexInstanceService({ scan: () => codexDiscovery.scan() });
   const codexAttention = new CodexAttention(desktop, codexInstances);
+  const codexMessages = new CodexMessageService();
+  const codexQuestions = new CodexQuestionService(codexMessages);
   const unsubscribeCodex = codexInstances.onChanged(snapshot => {
     if (rendererReady && !mainWindow.isDestroyed()) mainWindow.webContents.send("codex-instances-changed", snapshot);
   });
@@ -129,9 +134,11 @@ export const applicationReady = singleInstance ? app.whenReady().then(async () =
     setTrayAlert: active => {
       if (tray && !tray.isDestroyed()) tray.setImage(active ? trayImages.alert : trayImages.normal);
     },
+    setTitlebarAlert: phase => titlebar.setAttentionPhase(phase),
   }, attention.list());
-  mainWindow.on("focus", () => presentation.acknowledge());
-  mainWindow.on("hide", () => presentation.acknowledge());
+  mainWindow.on("focus", () => presentation.refreshFocus());
+  mainWindow.on("blur", () => presentation.refreshFocus());
+  mainWindow.on("hide", () => presentation.refreshFocus());
   const publish = () => {
     const snapshot = attention.list();
     const pending = snapshot.items.filter((item) => item.state === "pending").length;
@@ -159,6 +166,28 @@ export const applicationReady = singleInstance ? app.whenReady().then(async () =
   ipcMain.handle("attention-go", async (_event, source: string, id: string) => {
     const item = findItem(source, id);
     await activateAttention(item);
+  });
+  ipcMain.handle("attention-message", (event, source: string, id: string, message: string) => {
+    if (event.sender !== mainWindow.webContents || event.senderFrame !== mainWindow.webContents.mainFrame) {
+      throw new Error("Messages must be sent from the attention inbox.");
+    }
+    return codexMessages.send(findItem(source, id), message);
+  });
+  const requireInbox = (event: Electron.IpcMainInvokeEvent) => {
+    if (event.sender !== mainWindow.webContents || event.senderFrame !== mainWindow.webContents.mainFrame) {
+      throw new Error("Questions must be answered from the attention inbox.");
+    }
+  };
+  ipcMain.handle("attention-question", (event, source: string, id: string) => {
+    requireInbox(event);
+    return codexQuestions.questions(findItem(source, id));
+  });
+  ipcMain.handle("attention-answer", async (event, source: string, id: string, answers: unknown) => {
+    requireInbox(event);
+    const receipt = await codexQuestions.answer(findItem(source, id), answers);
+    try { await attention.setState(source, id, "done"); }
+    catch { return { ...receipt, warning: "Answers were sent, but the Tray item could not be marked Done. Use Done when storage is available; do not resend." }; }
+    return receipt;
   });
   ipcMain.handle("attention-destination", (_event, source: string, id: string, destination: Destination) =>
     attention.setDestination(source, id, destination));
@@ -210,7 +239,7 @@ export const applicationReady = singleInstance ? app.whenReady().then(async () =
       pendingCapture = undefined;
     }
   });
-  mainWindow.on("minimize", () => mainWindow.hide());
+  // Let native minimization keep the window available from the taskbar.
   mainWindow.on("close", (event) => {
     if (!quitting) { event.preventDefault(); mainWindow.hide(); }
   });
@@ -219,7 +248,7 @@ export const applicationReady = singleInstance ? app.whenReady().then(async () =
   app.on("second-instance", showInbox);
   await mainWindow.loadFile(path.join(__dirname, "../app/index.html"));
   await shortcuts.initialize();
-  if (process.env.BREADITOR_DEV_MODE) showInbox();
+  showInbox();
   if (process.env.WATCH_MODE === "true") require("./dev-watch").init();
   if (process.env.BREADITOR_DEV_MODE) require("./dev-mode").doInspectorSetupOnStart();
   publish();
@@ -241,13 +270,14 @@ export const applicationReady = singleInstance ? app.whenReady().then(async () =
     unsubscribeCodex();
     codexInstances.close();
     codexDiscovery.close();
+    codexMessages.close();
     shortcuts.close();
     attention.close();
     bookmarks.close();
     desktop.close();
     server.close();
   });
-  return { attention, desktop, mainWindow, tray, server, shortcuts, navigatePending, bookmarks, captureBookmarks, codexInstances };
+  return { attention, desktop, mainWindow, tray, server, shortcuts, navigatePending, bookmarks, captureBookmarks, codexInstances, codexMessages };
 }) : Promise.resolve(undefined);
 
 applicationReady.catch((error) => {

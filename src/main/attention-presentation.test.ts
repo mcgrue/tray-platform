@@ -1,4 +1,4 @@
-import { AttentionPresentation } from "./attention-presentation";
+import { AttentionPresentation, ATTENTION_SIGNAL_INTERVAL_MS } from "./attention-presentation";
 import { AttentionItem, AttentionSnapshot } from "../shared/attention";
 
 const item = (id: string, state: AttentionItem["state"] = "pending"): AttentionItem =>
@@ -10,24 +10,26 @@ function fixture(initial = snapshot(), platform = "win32", withDock = true) {
   const window = {
     isVisible: jest.fn(() => false), isMinimized: jest.fn(() => false),
     isFocused: jest.fn(() => false), isDestroyed: jest.fn(() => false),
-    showInactive: jest.fn(), flashFrame: jest.fn(),
+    hide: jest.fn(), showInactive: jest.fn(), flashFrame: jest.fn(),
   };
-  const showPending = jest.fn(), setTrayAlert = jest.fn();
+  const showPending = jest.fn(), setTrayAlert = jest.fn(), setTitlebarAlert = jest.fn();
   const dock = { bounce: jest.fn(() => 0), cancelBounce: jest.fn() };
-  const controller = new AttentionPresentation({ window, platform, showPending, setTrayAlert, dock: withDock ? dock : undefined }, initial);
+  const controller = new AttentionPresentation({ window, platform, showPending, setTrayAlert, setTitlebarAlert, dock: withDock ? dock : undefined }, initial);
   controllers.push(controller);
-  return { controller, window, showPending, setTrayAlert, dock };
+  return { controller, window, showPending, setTrayAlert, setTitlebarAlert, dock };
 }
 
 beforeEach(() => jest.useFakeTimers({ doNotFake: ["performance"] }));
 afterEach(() => { controllers.splice(0).forEach(controller => controller.close()); jest.useRealTimers(); });
 
-test("startup, repeated delivery, metadata edits and completed items do not open the inbox", () => {
+test("restored pending items start one signal; duplicates and metadata edits never reopen the inbox", () => {
   const f = fixture(snapshot(item("existing")));
   f.controller.update(snapshot({ ...item("existing"), title: "Edited", updatedAt: 2 }, item("done", "done")));
   expect(f.window.showInactive).not.toHaveBeenCalled();
-  expect(f.window.flashFrame).not.toHaveBeenCalled();
-  expect(f.setTrayAlert).not.toHaveBeenCalled();
+  expect(f.window.flashFrame.mock.calls).toEqual([[true]]);
+  expect(f.setTrayAlert.mock.calls).toEqual([[true]]);
+  expect(f.setTitlebarAlert.mock.calls).toEqual([[0]]);
+  expect(jest.getTimerCount()).toBe(1);
 });
 
 test.each([false, true])("hidden or minimized windows open only through showInactive (minimized=%s)", minimized => {
@@ -37,28 +39,44 @@ test.each([false, true])("hidden or minimized windows open only through showInac
   f.controller.update(snapshot(item("new")));
   expect(f.showPending).toHaveBeenCalledTimes(1);
   expect(f.window.showInactive).toHaveBeenCalledTimes(1);
-  expect(f.window.flashFrame).not.toHaveBeenCalled();
+  expect(f.window.hide).toHaveBeenCalledTimes(minimized ? 1 : 0);
+  if (minimized) expect(f.window.hide.mock.invocationCallOrder[0]).toBeLessThan(f.window.showInactive.mock.invocationCallOrder[0]);
+  expect(f.window.flashFrame.mock.calls).toEqual([[true]]);
   f.controller.update(snapshot(item("new")));
   expect(f.window.showInactive).toHaveBeenCalledTimes(1);
 });
 
-test("visible inactive inbox blinks until the triggering item is resolved, even with older pending work", () => {
+test.each(["darwin", "linux"])("%s uses its native inactive restore without the Windows workaround", platform => {
+  const f = fixture(snapshot(), platform);
+  f.window.isVisible.mockReturnValue(true);
+  f.window.isMinimized.mockReturnValue(true);
+  f.controller.update(snapshot(item("new")));
+  expect(f.window.hide).not.toHaveBeenCalled();
+  expect(f.window.showInactive).toHaveBeenCalledTimes(1);
+});
+
+test("tray and titlebar keep cycling until all pending work is resolved, including older items", () => {
   const f = fixture(snapshot(item("old")));
   f.window.isVisible.mockReturnValue(true);
   f.controller.update(snapshot(item("old"), item("new")));
   expect(f.window.flashFrame.mock.calls).toEqual([[true]]);
   expect(f.setTrayAlert.mock.calls).toEqual([[true]]);
-  jest.advanceTimersByTime(1000);
+  jest.advanceTimersByTime(2 * ATTENTION_SIGNAL_INTERVAL_MS);
   expect(f.setTrayAlert.mock.calls).toEqual([[true], [false], [true]]);
+  expect(f.setTitlebarAlert.mock.calls).toEqual([[0], [1], [2]]);
   expect(f.window.showInactive).not.toHaveBeenCalled();
   expect(f.showPending).not.toHaveBeenCalled();
   f.controller.update(snapshot(item("old"), item("new", "done")));
+  expect(f.window.flashFrame.mock.calls).toEqual([[true]]);
+  expect(jest.getTimerCount()).toBe(1);
+  f.controller.update(snapshot(item("old", "done"), item("new", "done")));
   expect(f.window.flashFrame.mock.calls).toEqual([[true], [false]]);
   expect(f.setTrayAlert).toHaveBeenLastCalledWith(false);
+  expect(f.setTitlebarAlert).toHaveBeenLastCalledWith(undefined);
   expect(jest.getTimerCount()).toBe(0);
 });
 
-test("multiple arrivals share one signal and snoozing the final triggering item stops it", () => {
+test("multiple arrivals share one signal and snoozing the final pending item stops it", () => {
   const f = fixture(); f.window.isVisible.mockReturnValue(true);
   f.controller.update(snapshot(item("a")));
   f.controller.update(snapshot(item("a"), item("b")));
@@ -70,37 +88,59 @@ test("multiple arrivals share one signal and snoozing the final triggering item 
   expect(jest.getTimerCount()).toBe(0);
 });
 
-test("acknowledgment stops blinking without completing items or restarting on later updates", () => {
+test("focus pauses only native flashing; tray and titlebar keep cycling through focus and hiding", () => {
   const f = fixture(); f.window.isVisible.mockReturnValue(true);
   f.controller.update(snapshot(item("a")));
-  f.controller.acknowledge();
+  f.window.isFocused.mockReturnValue(true);
+  f.controller.refreshFocus();
   f.controller.update(snapshot(item("a")));
-  jest.advanceTimersByTime(2000);
+  jest.advanceTimersByTime(2 * ATTENTION_SIGNAL_INTERVAL_MS);
   expect(f.window.flashFrame.mock.calls).toEqual([[true], [false]]);
-  f.controller.update(snapshot(item("a"), item("b")));
+  expect(f.setTrayAlert.mock.calls).toEqual([[true], [false], [true]]);
+  expect(f.setTitlebarAlert).toHaveBeenLastCalledWith(2);
+  expect(jest.getTimerCount()).toBe(1);
+  f.window.isFocused.mockReturnValue(false);
+  f.window.isVisible.mockReturnValue(false);
+  f.controller.refreshFocus();
   expect(f.window.flashFrame).toHaveBeenLastCalledWith(true);
+  jest.advanceTimersByTime(ATTENTION_SIGNAL_INTERVAL_MS);
+  expect(f.setTitlebarAlert).toHaveBeenLastCalledWith(3);
 });
 
-test("already focused inbox does not signal, but an expired snooze alerts after focus leaves", () => {
+test("already focused inbox cycles without native flashing, and an expired snooze resumes the signal", () => {
   const f = fixture(); f.window.isVisible.mockReturnValue(true); f.window.isFocused.mockReturnValue(true);
   f.controller.update(snapshot(item("a")));
-  expect(f.setTrayAlert).not.toHaveBeenCalled();
+  expect(f.setTrayAlert).toHaveBeenCalledWith(true);
+  expect(f.setTitlebarAlert).toHaveBeenCalledWith(0);
+  expect(f.window.flashFrame).not.toHaveBeenCalled();
   f.controller.update(snapshot(item("a", "snoozed")));
   f.window.isFocused.mockReturnValue(false);
   f.controller.update(snapshot(item("a")));
   expect(f.window.flashFrame).toHaveBeenCalledWith(true);
 });
 
-test("macOS uses one persistent Dock bounce and cancels request ID zero on acknowledgment", () => {
+test("macOS bounces while unfocused and continues tray/titlebar cycles when focus cancels the bounce", () => {
   const f = fixture(snapshot(), "darwin"); f.window.isVisible.mockReturnValue(true);
   f.controller.update(snapshot(item("a")));
   f.controller.update(snapshot(item("a"), item("b")));
   expect(f.dock.bounce.mock.calls).toEqual([["critical"]]);
   expect(f.window.flashFrame).not.toHaveBeenCalled();
-  expect(f.setTrayAlert).not.toHaveBeenCalled();
-  expect(jest.getTimerCount()).toBe(0);
-  f.controller.acknowledge();
+  expect(f.setTrayAlert.mock.calls).toEqual([[true]]);
+  expect(jest.getTimerCount()).toBe(1);
+  f.window.isFocused.mockReturnValue(true);
+  f.controller.refreshFocus();
   expect(f.dock.cancelBounce.mock.calls).toEqual([[0]]);
+  jest.advanceTimersByTime(ATTENTION_SIGNAL_INTERVAL_MS);
+  expect(f.setTrayAlert).toHaveBeenLastCalledWith(false);
+  expect(f.setTitlebarAlert).toHaveBeenLastCalledWith(1);
+  expect(f.dock.bounce).toHaveBeenCalledTimes(1);
+  f.window.isFocused.mockReturnValue(false);
+  f.controller.refreshFocus();
+  expect(f.dock.bounce).toHaveBeenCalledTimes(2);
+  f.controller.update(snapshot());
+  expect(f.dock.cancelBounce.mock.calls).toEqual([[0], [0]]);
+  expect(f.setTitlebarAlert).toHaveBeenLastCalledWith(undefined);
+  expect(jest.getTimerCount()).toBe(0);
 });
 
 test("a refused Dock bounce is not canceled as a real request", () => {
@@ -117,6 +157,7 @@ test("missing Dock support falls back to a cancellable tray and taskbar signal",
   f.controller.close();
   expect(f.window.flashFrame.mock.calls).toEqual([[true], [false]]);
   expect(f.setTrayAlert.mock.calls).toEqual([[true], [false]]);
+  expect(f.setTitlebarAlert.mock.calls).toEqual([[0], [undefined]]);
   expect(jest.getTimerCount()).toBe(0);
 });
 
@@ -134,9 +175,22 @@ test("destroyed windows stop their timer without calling native window methods",
   const f = fixture(); f.window.isVisible.mockReturnValue(true);
   f.controller.update(snapshot(item("a")));
   f.window.isDestroyed.mockReturnValue(true);
-  jest.advanceTimersByTime(500);
+  jest.advanceTimersByTime(ATTENTION_SIGNAL_INTERVAL_MS);
   expect(jest.getTimerCount()).toBe(0);
   expect(f.window.flashFrame.mock.calls).toEqual([[true]]);
   f.controller.update(snapshot(item("b")));
   expect(f.window.showInactive).not.toHaveBeenCalled();
+});
+
+test.each(["win32", "linux", "darwin"])("%s stays idle without pending work and cleans up on shutdown", platform => {
+  const f = fixture(snapshot(item("done", "done"), item("later", "snoozed")), platform);
+  expect(jest.getTimerCount()).toBe(0);
+  expect(f.setTitlebarAlert).not.toHaveBeenCalled();
+  expect(f.setTrayAlert).not.toHaveBeenCalled();
+  f.controller.update(snapshot(item("a")));
+  expect(jest.getTimerCount()).toBe(1);
+  f.controller.close();
+  expect(jest.getTimerCount()).toBe(0);
+  expect(f.setTitlebarAlert).toHaveBeenLastCalledWith(undefined);
+  expect(f.setTrayAlert).toHaveBeenLastCalledWith(false);
 });

@@ -156,7 +156,7 @@ export function createBookmarkUI(bridge: BookmarkBridge) {
       const bookmarks = filterBookmarks(snapshot.bookmarks, filter.value);
       if (!bookmarks.length) list.appendChild(node("p", "No matching bookmarks."));
       bookmarks.forEach(bookmark => {
-        const card = node("article"); card.style.border = "1px solid #888"; card.style.padding = "10px"; card.style.marginTop = "10px";
+        const card = node("article");
         card.append(node("h3", bookmark.title), node("p", [bookmark.project, bookmark.attention ? `${bookmark.attention.source}: ${bookmark.attention.id}` : ""].filter(Boolean).join(" | ")));
         if (bookmark.humanNote) { const label = node("strong", "Human note"), note = node("p", bookmark.humanNote); note.style.whiteSpace = "pre-wrap"; card.append(label, note); }
         if (bookmark.robotHint) { const label = node("strong", "Robot hint"), hint = node("p", bookmark.robotHint); hint.style.whiteSpace = "pre-wrap"; card.append(label, hint); }

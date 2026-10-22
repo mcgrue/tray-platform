@@ -1,9 +1,11 @@
 const { app, Menu, Tray, nativeImage } = require("electron");
+import path from "path";
 import soundConfig from "../shared/sounds.json";
 import { type SoundConfig } from "../shared/types";
 import { getWindowContents } from "./renderer-window";
 
 const sounds = (soundConfig as SoundConfig).sounds;
+export const trayIconPath = path.join(__dirname, "resources", "tray-icon.png");
 
 export function trayAlertImages() {
 	// A high-contrast amber alert alternates with the normal tray icon. Keep the
@@ -18,14 +20,14 @@ export function trayAlertImages() {
 		pixels[offset + 3] = 0xff;
 	}
 	return {
-		normal: nativeImage.createFromPath(__dirname + "/resources/tray-icon.png"),
+		normal: nativeImage.createFromPath(trayIconPath),
 		alert: nativeImage.createFromBitmap(pixels, { width: 16, height: 16 }),
 	};
 }
 
 export function setupTray(options: { showInbox: () => void; navigate: () => void; capture: () => void; quit: () => void }): Electron.CrossProcessExports.Tray | null {
 	try {
-		const appIcon = new Tray(__dirname + "/resources/tray-icon.png");
+		const appIcon = new Tray(trayIconPath);
 
 		// Create menu items for each sound
 		const soundMenuItems = Object.entries(sounds).map(([key, sound]) => ({

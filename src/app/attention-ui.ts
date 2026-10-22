@@ -1,5 +1,7 @@
 import { AttentionBridge, AttentionItem, AttentionSnapshot, AttentionState, canNavigateAttention, codexOriginLabel, UrlDestination, WindowDestination } from "../shared/attention";
 import { initialNavigationProgress, navigationProgressButton, navigationProgressText } from "./navigation-progress";
+import { mountCodexMessageUI } from "./codex-message-ui";
+import { mountCodexQuestionUI } from "./codex-question-ui";
 
 export function visibleAttentionItems(items: AttentionItem[], state: AttentionState): AttentionItem[] {
   return items.filter(item => item.state === state).sort((a, b) =>
@@ -61,21 +63,23 @@ export function mountAttentionUI(root: HTMLElement, bridge: AttentionBridge, opt
     tabs.appendChild(tab);
   });
   root.append(heading, status, error, tabs, empty, list);
-  root.style.maxWidth = "720px";
+  root.dataset.attentionInbox = "true";
 
   function card(initial: AttentionItem) {
     let item = initial;
     const node = element("article");
-    node.style.border = "1px solid #888";
-    node.style.padding = "12px";
-    node.style.marginTop = "10px";
+
     const title = element("h3");
     const metadata = element("p");
+    metadata.dataset.muted = "";
     const origin = element("p");
+    origin.dataset.muted = "";
     const description = element("p");
     description.style.whiteSpace = "pre-wrap";
     const destination = element("p");
+    destination.dataset.muted = "";
     const actions = element("div");
+    actions.dataset.cardActions = "";
     const progress = element("p");
     progress.setAttribute("role", "status");
     const failure = element("p");
@@ -125,6 +129,7 @@ export function mountAttentionUI(root: HTMLElement, bridge: AttentionBridge, opt
       go.textContent = navigationProgressButton(update);
       progress.textContent = navigationProgressText(update);
     });
+    go.dataset.variant = "primary";
     const snooze = element("select");
     snooze.setAttribute("aria-label", "Snooze duration");
     [5, 15, 60].forEach(minutes => {
@@ -165,6 +170,10 @@ export function mountAttentionUI(root: HTMLElement, bridge: AttentionBridge, opt
     editor.append(summary, form, windowLabel, discover, saveWindow);
     actions.append(go, snooze, snoozeAction, done, reopen);
     node.append(title, metadata, origin, description, destination, progress, failure, actions, editor);
+    const messageRoot = element("section");
+    node.appendChild(messageRoot);
+    const question = mountCodexQuestionUI(messageRoot, bridge, item);
+    const message = mountCodexMessageUI(messageRoot, bridge, item);
     const detailRoot = element("section");
     node.appendChild(detailRoot);
     const details = options.mountDetails?.(detailRoot, item);
@@ -188,7 +197,7 @@ export function mountAttentionUI(root: HTMLElement, bridge: AttentionBridge, opt
       if (!editor.open && document.activeElement !== url) url.value = item.destination?.kind === "url" ? item.destination.url : "";
     }
     refresh();
-    return { node, update(next: AttentionItem) { item = next; refresh(); details?.update(item); }, dispose() { unsubscribeProgress?.(); details?.dispose(); } };
+    return { node, update(next: AttentionItem) { item = next; refresh(); question.update(item); message.update(item); details?.update(item); }, dispose() { unsubscribeProgress?.(); question.dispose(); message.dispose(); details?.dispose(); } };
   }
 
   function render() {

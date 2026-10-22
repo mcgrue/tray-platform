@@ -49,6 +49,7 @@ function toAttention(event) {
     id,
     body: {
       title: shorten("Codex needs input: " + rendered[0].title, 500),
+      ...(/^[a-zA-Z0-9_-]{1,200}$/.test(session) && { codexSessionId: session }),
       project: shorten(cwd, 500),
       description: shorten([
         "Project: " + cwd, "Session: " + session, "Turn: " + turn, "Call: " + call,

@@ -2,6 +2,7 @@ import { promises as fs } from "fs";
 import path = require("path");
 import { randomBytes } from "crypto";
 import { AttentionInput, AttentionItem, AttentionSnapshot, AttentionState, CodexOrigin, Destination } from "../shared/attention";
+import { isCodexSessionId } from "../shared/codex-message";
 
 const sounds = new Set<string>(Object.values(require("../shared/sounds.json").sounds).map((sound: any) => sound.id));
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
@@ -63,6 +64,10 @@ export function validateCodexOrigin(value: unknown): CodexOrigin {
 export function validateAttentionInput(value: unknown): AttentionInput {
   const input = object(value);
   const result: AttentionInput = { title: text(input.title, "title", 500) };
+  if (input.codexSessionId !== undefined) {
+    if (!isCodexSessionId(input.codexSessionId)) throw new AttentionError("Invalid Codex session ID");
+    result.codexSessionId = input.codexSessionId;
+  }
   for (const [key, maximum] of [["description", 20000], ["project", 500]] as const) {
     if (input[key] !== undefined) result[key] = text(input[key], key, maximum);
   }

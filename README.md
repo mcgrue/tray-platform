@@ -33,30 +33,36 @@ Use quoted `#RRGGBB` colors. The optional text colors apply to title text and
 Windows/Linux window-control symbols. Leave either text color blank or unset to
 choose black or white for contrast in that state; macOS retains its traffic lights.
 Restart the app after changing these values. Smoke scripts set
-`TRAY_PLATFORM_SMOKETEST=1`, overriding both backgrounds to army olive `#4b5320`
+`TRAY_PLATFORM_SMOKETEST=1`, overriding both idle backgrounds to army olive `#4b5320`
 and both text colors to white. Window titles get the `smoketest - ` prefix,
 including after renderer reloads.
 After building, `yarn electron dev-infrastructure/smoke-titlebar.cjs` checks
 color overrides, focus-event updates, title changes, reloads, and close-to-tray.
 
-Run `yarn start` (or `yarn dev` for the existing watch workflow). Double-click the
-tray icon to open or focus the inbox, or open it from the tray menu.
+Run `yarn start` (or `yarn dev` for the existing watch workflow). The attention
+inbox opens on startup. Minimizing keeps it in the taskbar for normal restoration
+and focus. Double-click the tray icon to open or focus it, or use the tray menu.
 Pending items support Go, Snooze, and Done; history supports
 Reopen. Closing the window keeps the tray process running; use its Quit command
 to exit. Data is stored in `attention.json` in Electron's user-data directory.
 
-New pending work opens a hidden or minimized inbox on its Pending view without
-taking keyboard focus. If the inbox is already visible but unfocused, the Windows
-tray icon blinks and its taskbar button flashes; on macOS the Dock icon bounces.
-The signal stops when you focus or hide the inbox, or the triggering items are
-completed or snoozed. An already focused inbox updates normally. Duplicate
-deliveries, metadata edits, and startup restoration do not alert; an expired
-snooze can alert again. Explicit tray/menu/shortcut actions still focus the app.
+While any inbox items are pending, the titlebar cycles amber, purple, and teal
+once per second and the tray icon alternates its normal and alert images.
+This continues when the window is focused, hidden, minimized, or reloaded, and
+starts for saved pending items when the app launches. Windows/Linux additionally
+request taskbar attention while unfocused; macOS uses a critical Dock bounce
+while unfocused and resumes it when focus leaves. Resolving or snoozing the last
+pending item stops the signal and restores the configured titlebar and tray icon.
+
+New pending work still opens a hidden or minimized inbox on its Pending view
+without taking keyboard focus. Duplicate deliveries, metadata edits, and startup
+restoration do not reopen the inbox. Explicit tray/menu/shortcut actions focus it.
 After updating, quit and relaunch Tray Platform to load the new window behavior.
 
 Windows presentation check: `yarn pre-build`, then clear `ELECTRON_RUN_AS_NODE`
 and run `yarn electron dev-infrastructure/smoke-attention-presentation.cjs`.
-It checks native tray-image changes, hidden/minimized opening, and unchanged
+It checks cycling titlebar/native overlay colors, persistent tray-image changes,
+hidden/minimized opening, restoration after clearing pending items, and unchanged
 OS foreground with zero inbox focus events. macOS Dock calls have unit coverage;
 native bounce acceptance must be run on macOS.
 
@@ -163,6 +169,34 @@ See the official [global instruction discovery](https://learn.chatgpt.com/docs/a
 and [hook configuration and trust](https://learn.chatgpt.com/docs/hooks) documentation.
 
 ### Behavior and maintenance
+
+On Windows, expand **Message Codex** on a Codex attention item, type a message,
+and click **Send message** or press **Ctrl+Enter**. It targets that item's
+conversation, steers an active turn, or starts a follow-up when idle. Sending a
+free-form message leaves the item pending; use **Done** when resolved. This is
+separate from submitting a structured question answer in Codex.
+
+For async questions, expand **Answer question**, choose a suggested answer or
+type your own for each open question, then click **Send answer(s)** (Ctrl+Enter).
+Tray sends the extension's structured question reply so Codex can dismiss the
+matching question dialog, then marks the Tray item Done after acknowledgment.
+The exact original questions are loaded from the matching local session under
+`CODEX_HOME/sessions` (default `~/.codex/sessions`), including older inbox items.
+Missing transcripts or unverifiable question identities fail visibly. Blocking
+questions must still be answered in Codex. **Message Codex** remains free-form.
+
+Failed sends retain the draft. If delivery cannot be confirmed, check the
+conversation before resending. The conversation must be open in a Codex client
+supporting local owner routing (verified against Windows VS Code extension
+`26.1007.21434`). This uses an internal versioned IPC protocol; incompatible
+clients fail visibly. Standalone CLI, WSL, and remote sessions are not supported.
+Existing hook items work without reinstalling the bridge when their original
+session header is intact. Updated hooks store a dedicated session ID as well.
+
+Message smoke (isolated Electron profile, fixture IPC router, actual Codex
+runtime with deterministic local responses): set `CODEX_CLI` to the extension's
+`codex.exe`, run `yarn pre-build`, clear `ELECTRON_RUN_AS_NODE`, then run
+`yarn electron dev-infrastructure/smoke-codex-messages.cjs`.
 
 Both `request_user_input` and `request_user_input_async` create an inbox entry
 with the question, choices, project directory, and session/turn/call identifiers.

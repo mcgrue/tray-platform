@@ -8,38 +8,14 @@
       content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self';"
     />
 
-    <style>
-      :root { color-scheme: dark; font: 15px/1.5 system-ui, sans-serif; background: #141923; color: #ecf0f8; }
-      html { scroll-padding-top: 48px; }
-      body { max-width: 960px; margin: 0 auto; padding: 60px 24px 24px; }
-      #app-titlebar { position: fixed; inset: 0 0 auto; height: 36px; z-index: 1000; background: #232c3b; color: white; -webkit-app-region: drag; user-select: none; }
-      [data-titlebar-label] { position: absolute; left: env(titlebar-area-x, 0px); width: env(titlebar-area-width, calc(100% - 138px)); height: 36px; box-sizing: border-box; padding: 0 12px; line-height: 36px; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      #app-titlebar[data-platform="darwin"] [data-titlebar-label] { left: env(titlebar-area-x, 80px); width: env(titlebar-area-width, calc(100% - 80px)); }
-      [data-titlebar-controls] { position: absolute; right: 0; top: 0; height: 36px; -webkit-app-region: no-drag; }
-      #app-titlebar button { width: 46px; height: 36px; margin: 0; padding: 0; border: 0; border-radius: 0; color: inherit; background: transparent; }
-      #app-titlebar button:hover { background: #ffffff22; }
-      #app-titlebar button[data-window-action="close"]:hover { background: #c42b1c; color: white; }
-      h1, h2, h3 { line-height: 1.2; }
-      button, input, select, textarea { font: inherit; color: inherit; border: 1px solid #48546a; background: #232c3b; border-radius: 6px; padding: 7px 11px; }
-      button { cursor: pointer; margin: 3px; }
-      button:hover { background: #34425a; }
-      button:disabled { opacity: .5; cursor: default; }
-      button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid #91baff; outline-offset: 2px; }
-      input, textarea { box-sizing: border-box; max-width: 100%; }
-      textarea { width: 100%; min-height: 88px; }
-      article { background: #1c2432; padding: 16px; margin: 12px 0; border: 1px solid #344158; border-radius: 10px; }
-      p { overflow-wrap: anywhere; white-space: pre-wrap; }
-      [role="alert"] { color: #ffb5aa; }
-      button[aria-pressed="true"] { border-color: #91baff; background: #344768; }
-      [role="option"][aria-selected="true"] { border-color: #91baff; background: #344768; }
-      #soundboard { border-top: 1px solid #344158; margin-top: 30px; padding-top: 14px; }
-      label { display: inline-block; margin: 5px; }
-      summary { cursor: pointer; }
-    </style>
+    <link rel="stylesheet" href="./index.css" />
   </head>
   <body>
     <header id="app-titlebar" aria-label="Window titlebar">
-      <span data-titlebar-label>Tray Platform</span>
+      <div data-titlebar-content>
+        <img data-titlebar-icon src="../main/resources/tray-icon.png" alt="" draggable="false" />
+        <span data-titlebar-label>Tray Platform</span>
+      </div>
       <div data-titlebar-controls hidden><button type="button" data-window-action="minimize" aria-label="Minimize window">−</button><button type="button" data-window-action="maximize" aria-label="Maximize window">□</button><button type="button" data-window-action="close" aria-label="Close window">×</button></div>
     </header>
   </body>

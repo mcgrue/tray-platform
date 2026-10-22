@@ -9,6 +9,7 @@ export interface CodexInstance {
   title?: string;
   workspace?: string;
   workspaceKind?: "folder" | "workspace";
+  lastFileUpdatedAt?: number;
 }
 
 export interface CodexInstancesSnapshot {

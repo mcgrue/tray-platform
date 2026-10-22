@@ -32,7 +32,7 @@ export function mountNavigationUI(root: HTMLElement, bridge: NavigationBridge, o
   let progressButton = "Opening…";
   let previousFocus: HTMLElement | null;
   root.dataset.navigationPanel = "true";
-  const invoke = node("button", "Take me there"); invoke.type = "button";
+  root.hidden = true;
   const globalError = node("p"); globalError.setAttribute("role", "alert");
   const chooser = node("section"); chooser.dataset.navigationChooser = "true"; chooser.hidden = true;
   chooser.setAttribute("aria-label", "Choose pending work");
@@ -48,14 +48,15 @@ export function mountNavigationUI(root: HTMLElement, bridge: NavigationBridge, o
   const message = node("p"); message.setAttribute("role", "alert");
   const progress = node("p"); progress.setAttribute("role", "status");
   const go = node("button", "Go"); go.type = "button";
+  go.dataset.variant = "primary";
   const close = node("button", "Close chooser"); close.type = "button";
   const settings = node("details"); settings.appendChild(node("summary", "Keyboard shortcuts"));
   const settingsError = node("p"); settingsError.setAttribute("role", "alert"); settings.appendChild(settingsError);
   const rows = new Map<ShortcutKey, { form: HTMLFormElement; input: HTMLInputElement; error: HTMLElement; setting: ShortcutSetting }>();
   chooser.append(heading, label, list, details, progress, message, go, close);
-  root.append(invoke, globalError, chooser, settings);
+  root.append(globalError, chooser, settings);
 
-  function hide() { chooser.hidden = true; filter.setAttribute("aria-expanded", "false"); if (previousFocus?.isConnected) previousFocus.focus(); }
+  function hide() { root.hidden = true; chooser.hidden = true; filter.setAttribute("aria-expanded", "false"); if (previousFocus?.isConnected) previousFocus.focus(); }
   function render() {
     if (disposed) return;
     const items = navigationItems(snapshot.items, filter.value);
@@ -90,7 +91,6 @@ export function mountNavigationUI(root: HTMLElement, bridge: NavigationBridge, o
     catch (error) { if (!disposed) { progress.textContent = ""; message.textContent = errorText(error); } }
     finally { busy = false; navigatingKey = undefined; render(); }
   }
-  invoke.addEventListener("click", () => { globalError.textContent = ""; void bridge.navigatePending().catch(error => { if (!disposed) globalError.textContent = errorText(error); }); });
   go.addEventListener("click", () => void activate()); close.addEventListener("click", hide);
   filter.addEventListener("input", () => { message.textContent = ""; render(); });
   chooser.addEventListener("keydown", event => {
@@ -132,6 +132,7 @@ export function mountNavigationUI(root: HTMLElement, bridge: NavigationBridge, o
       if (disposed) return;
       if (chooser.hidden) previousFocus = document.activeElement as HTMLElement;
       if (!busy) progress.textContent = "";
+      root.hidden = false;
       chooser.hidden = false; filter.value = ""; selected = undefined; message.textContent = event.error || ""; render(); filter.focus();
       filter.setAttribute("aria-expanded", "true");
     }),

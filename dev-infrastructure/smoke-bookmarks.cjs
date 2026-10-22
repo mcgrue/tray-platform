@@ -120,7 +120,8 @@ async function run() {
 
   await attention.upsert("smoke", "second", { title: "Other pending task" });
   mainWindow.show(); mainWindow.minimize();
-  await waitFor("minimize hides application window", () => !mainWindow.isVisible());
+  await waitFor("application window minimizes normally", () => mainWindow.isMinimized());
+  assert.equal(mainWindow.isVisible(), true, "Minimization retains the taskbar window");
   await navigatePending();
   await waitFor("pending chooser restores minimized application", async () => mainWindow.isVisible() && !mainWindow.isMinimized() && await evaluate(() => !document.querySelector("[data-navigation-chooser]").hidden));
   await evaluate(() => {

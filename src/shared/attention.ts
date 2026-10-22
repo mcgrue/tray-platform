@@ -25,6 +25,7 @@ export interface CodexOrigin {
 
 export interface AttentionInput {
   title: string;
+  codexSessionId?: string;
   description?: string;
   project?: string;
   destination?: Destination;
@@ -68,6 +69,9 @@ export interface AttentionBridge {
   getAttention(): Promise<AttentionSnapshot>;
   setAttentionState(source: string, id: string, state: AttentionState, minutes?: number): Promise<void>;
   goToAttention(source: string, id: string): Promise<void>;
+  sendAttentionMessage?(source: string, id: string, message: string): Promise<import("./codex-message").CodexMessageReceipt>;
+  getAttentionQuestion?(source: string, id: string): Promise<import("./codex-question").CodexQuestion[]>;
+  answerAttentionQuestion?(source: string, id: string, answers: import("./codex-question").CodexQuestionAnswer[]): Promise<import("./codex-question").CodexAnswerReceipt>;
   setAttentionDestination(source: string, id: string, destination: Destination): Promise<void>;
   listWindows(): Promise<WindowDestination[]>;
   onAttentionChanged(callback: (snapshot: AttentionSnapshot) => void): () => void;

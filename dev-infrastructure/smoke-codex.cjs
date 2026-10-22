@@ -31,6 +31,9 @@ async function run() {
   const endpoint = "http://127.0.0.1:" + server.address().port;
   const evaluate = (fn, ...args) => mainWindow.webContents.executeJavaScript("(" + fn.toString() + ")(..." + JSON.stringify(args) + ")");
   await waitFor(() => evaluate(() => !!document.querySelector("main h2")), "renderer");
+  assert.equal(mainWindow.isVisible(), true, "Startup opens the attention inbox");
+  mainWindow.hide();
+  await waitFor(() => !mainWindow.isVisible() && !mainWindow.isFocused(), "hidden inbox loses focus");
   const sounds = [];
   const originalSend = mainWindow.webContents.send.bind(mainWindow.webContents);
   mainWindow.webContents.send = (channel, ...args) => {

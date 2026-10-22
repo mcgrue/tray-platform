@@ -3,6 +3,7 @@ import { TitlebarAction, TitlebarState } from "../shared/titlebar";
 
 export const TITLEBAR_HEIGHT = 36;
 export const SMOKETEST_TITLEBAR_COLOR = "#4b5320";
+export const ATTENTION_TITLEBAR_COLORS = ["#d69e2e", "#805ad5", "#0f766e"] as const;
 const SMOKETEST_PREFIX = "smoketest - ";
 
 export interface TitlebarConfig {
@@ -67,6 +68,7 @@ export function titlebarWindowOptions(config: TitlebarConfig, platform: string):
 export class TitlebarController {
   private title: string;
   private focused: boolean;
+  private attentionPhase?: number;
 
   constructor(private readonly window: BrowserWindow, private readonly config: TitlebarConfig, private readonly platform: string) {
     this.title = windowTitle("Tray Platform", config.smokeTest);
@@ -81,8 +83,11 @@ export class TitlebarController {
   }
 
   state(): TitlebarState {
-    const color = this.focused ? this.config.active : this.config.inactive;
-    const textColor = (this.focused ? this.config.activeTextColor : this.config.inactiveTextColor) ?? titlebarTextColor(color);
+    const alertColor = this.attentionPhase === undefined ? undefined
+      : ATTENTION_TITLEBAR_COLORS[this.attentionPhase % ATTENTION_TITLEBAR_COLORS.length];
+    const color = alertColor ?? (this.focused ? this.config.active : this.config.inactive);
+    const textColor = alertColor ? titlebarTextColor(color)
+      : (this.focused ? this.config.activeTextColor : this.config.inactiveTextColor) ?? titlebarTextColor(color);
     return { title: this.title, color, textColor, focused: this.focused,
       maximized: this.window.isMaximized(), platform: this.platform };
   }
@@ -90,6 +95,11 @@ export class TitlebarController {
   setTitle(title: string): void {
     this.title = windowTitle(title, this.config.smokeTest);
     this.window.setTitle(this.title);
+    this.publish();
+  }
+
+  setAttentionPhase(phase: number | undefined): void {
+    this.attentionPhase = phase;
     this.publish();
   }
 

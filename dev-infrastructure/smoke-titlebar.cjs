@@ -1,5 +1,5 @@
 // electron dev-infrastructure/smoke-titlebar.cjs
-// Uses real IPC, native overlay updates and rendered pixels without taking focus.
+// Checks startup, native minimize/restore, then titlebar updates without taking focus.
 const assert = require("assert").strict;
 const fs = require("fs"), os = require("os"), path = require("path");
 const { app } = require("electron");
@@ -26,6 +26,15 @@ async function run() {
       height: bar.getBoundingClientRect().height, controlsHidden: bar.querySelector("[data-titlebar-controls]").hidden };
   });
   await waitFor("prefixed titlebar", async () => (await read()).title === "smoketest - Tray Platform");
+  assert.equal(mainWindow.isVisible(), true, "Startup opens the attention inbox");
+  mainWindow.minimize();
+  await waitFor("native minimization", () => mainWindow.isMinimized());
+  assert.equal(mainWindow.isVisible(), true, "Minimization retains the taskbar window");
+  mainWindow.restore();
+  mainWindow.focus();
+  await waitFor("restored inbox takes focus", () => mainWindow.isVisible() && !mainWindow.isMinimized() && mainWindow.isFocused());
+  mainWindow.hide();
+  await waitFor("hidden inbox loses focus", async () => !mainWindow.isFocused() && (await read()).focused === "false");
   const check = async focused => {
     const state = await read();
     assert.equal(state.title, mainWindow.getTitle());
@@ -69,7 +78,7 @@ async function run() {
   mainWindow.close();
   assert.equal(mainWindow.isDestroyed(), false, "Close retains the existing hide-to-tray behavior");
   assert.equal(mainWindow.isVisible(), false);
-  console.log("PASS: olive active/inactive titlebar overrides configured colors; native overlay and renderer agree; smoke prefix survives document/IPC updates and reload; close hides; no focus taken.");
+  console.log("PASS: startup opens the inbox; minimize retains the taskbar window; restore focuses; olive titlebar and native overlay agree; smoke prefix survives document/IPC updates and reload; close hides; titlebar updates do not take focus.");
   console.log(JSON.stringify({ dataPath, overlays: overlays.length }));
 }
 

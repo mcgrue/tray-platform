@@ -1,3 +1,4 @@
+import "./app.css";
 import SamJs from "sam-js";
 import soundConfig from "../shared/sounds.json";
 import { SoundConfig } from "../shared/types";
@@ -8,6 +9,7 @@ import "../shared/bridge";
 import { createBookmarkUI } from "./bookmark-ui";
 import { mountTitlebar } from "./titlebar";
 import { mountCodexInstancesUI } from "./codex-instances-ui";
+import { mountSectionTabs } from "./section-tabs";
 
 const disposeTitlebar = mountTitlebar(document.getElementById("app-titlebar")!, window.ipcComms);
 window.addEventListener("beforeunload", disposeTitlebar, { once: true });
@@ -66,35 +68,48 @@ window["ipcComms"].onSayWords((value) => {
 });
 
 try {
+	const tabList = document.createElement("nav");
+	tabList.id = "section-tabs";
+	const inboxPanel = document.createElement("section");
+	const inboxRoot = document.createElement("main");
+	const codexRoot = document.createElement("section");
+	const bookmarkRoot = document.createElement("section");
+	const soundboard = document.createElement("section");
+	document.body.append(tabList, inboxPanel, codexRoot, bookmarkRoot, soundboard);
+	const tabs = mountSectionTabs(tabList, [
+		{ id: "attention-inbox", label: "Attention Inbox", panel: inboxPanel },
+		{ id: "codex-instances", label: "Codex Instances", panel: codexRoot },
+		{ id: "bookmarks", label: "Context Bookmarks", panel: bookmarkRoot },
+		{ id: "soundboard", label: "Sound Board", panel: soundboard },
+	]);
+	// Reveal the destination before its existing handler scrolls or focuses an editor.
+	const sectionSubscriptions = [
+		window.ipcComms.onShowAttention?.(() => tabs.select("attention-inbox")),
+		window.ipcComms.onShowNavigation(() => tabs.select("attention-inbox")),
+		window.ipcComms.onCaptureBookmark(() => tabs.select("bookmarks")),
+	];
+	window.addEventListener("beforeunload", () => {
+		sectionSubscriptions.forEach(unsubscribe => unsubscribe?.());
+		tabs.dispose();
+	}, { once: true });
 	const bookmarks = createBookmarkUI(window.ipcComms);
 	const navigationRoot = document.createElement("section");
 	navigationRoot.id = "navigation";
-	document.body.appendChild(navigationRoot);
+	inboxPanel.append(navigationRoot, inboxRoot);
 	const disposeNavigation = mountNavigationUI(navigationRoot, window["ipcComms"] as NavigationBridge, {
 		resumeText: bookmarks.resumeText, onResumeChanged: bookmarks.onChanged,
 	});
 	window.addEventListener("beforeunload", disposeNavigation, { once: true });
-	const inboxRoot = document.createElement("main");
-	document.body.appendChild(inboxRoot);
 	const disposeInbox = mountAttentionUI(inboxRoot, window["ipcComms"] as AttentionBridge, { mountDetails: bookmarks.mountAttentionDetails });
 	window.addEventListener("beforeunload", disposeInbox, { once: true });
-	const codexRoot = document.createElement("section");
-	codexRoot.id = "codex-instances";
-	document.body.appendChild(codexRoot);
 	const disposeCodex = mountCodexInstancesUI(codexRoot, window.ipcComms);
 	window.addEventListener("beforeunload", disposeCodex, { once: true });
-	const bookmarkRoot = document.createElement("section");
-	bookmarkRoot.id = "bookmarks";
-	document.body.appendChild(bookmarkRoot);
 	const disposeBookmarks = bookmarks.mount(bookmarkRoot);
 	window.addEventListener("beforeunload", () => { disposeBookmarks(); bookmarks.dispose(); }, { once: true });
-	const soundboard = document.createElement("section");
-	soundboard.id = "soundboard";
 	soundboard.setAttribute("aria-label", "Sound board");
 	const heading = document.createElement("h2");
 	heading.textContent = "Sound board";
 	soundboard.appendChild(heading);
-	document.body.appendChild(soundboard);
 	// Existing sound buttons
 	for (const key in sounds) {
 		const sound = sounds[key];

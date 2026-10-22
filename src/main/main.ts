@@ -7,7 +7,7 @@ import { setWindow } from "./renderer-window";
 import { setupTray, trayAlertImages } from "./tray";
 import { AttentionPresentation } from "./attention-presentation";
 import { createServer } from "./webserver";
-import { AttentionState, Destination, ShortcutKey } from "../shared/attention";
+import { AttentionItem, AttentionState, canNavigateAttention, Destination, ShortcutKey } from "../shared/attention";
 import { ShortcutService } from "./shortcut-service";
 import { navigationDecision } from "./navigation";
 import { BookmarkService } from "./bookmark-service";
@@ -19,6 +19,7 @@ import { TitlebarAction } from "../shared/titlebar";
 import { CodexDiscovery } from "./codex-discovery";
 import { CodexInstanceService } from "./codex-instance-service";
 import { createCodexInstancesApi } from "./codex-instances-api";
+import { CodexAttention } from "./codex-attention";
 
 require("dotenv").config();
 
@@ -63,6 +64,7 @@ export const applicationReady = singleInstance ? app.whenReady().then(async () =
   const desktop = new DesktopService({ openUrl: (link) => shell.openExternal(link), appPid: process.pid });
   const codexDiscovery = new CodexDiscovery(desktop);
   const codexInstances = new CodexInstanceService({ scan: () => codexDiscovery.scan() });
+  const codexAttention = new CodexAttention(desktop, codexInstances);
   const unsubscribeCodex = codexInstances.onChanged(snapshot => {
     if (rendererReady && !mainWindow.isDestroyed()) mainWindow.webContents.send("codex-instances-changed", snapshot);
   });
@@ -88,11 +90,15 @@ export const applicationReady = singleInstance ? app.whenReady().then(async () =
     },
   });
   const captureBookmarks = () => capture.request();
+  const activateAttention = (item: AttentionItem) => codexAttention.activate(item, progress => {
+    if (rendererReady && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("attention-navigation-progress", { source: item.source, id: item.id, ...progress });
+    }
+  });
   const goToPending = async (source: string, id: string) => {
     const item = attention.get(source, id);
     if (!item || item.state !== "pending") throw new Error("This item is no longer pending");
-    if (!item.destination) throw new Error("Choose a destination in the inbox first");
-    await desktop.activate(item.destination);
+    await activateAttention(item);
   };
   let navigating = false;
   const navigatePending = async () => {
@@ -100,7 +106,7 @@ export const applicationReady = singleInstance ? app.whenReady().then(async () =
     navigating = true;
     try {
       const decision = navigationDecision(attention.list().items);
-      if (decision.kind === "single" && decision.item.destination) {
+      if (decision.kind === "single" && canNavigateAttention(decision.item)) {
         await goToPending(decision.item.source, decision.item.id);
       } else showNavigation();
     } catch (error) { showNavigation(error instanceof Error ? error.message : String(error)); }
@@ -152,8 +158,7 @@ export const applicationReady = singleInstance ? app.whenReady().then(async () =
     attention.setState(source, id, state, minutes));
   ipcMain.handle("attention-go", async (_event, source: string, id: string) => {
     const item = findItem(source, id);
-    if (!item.destination) throw new Error("Choose a destination first");
-    await desktop.activate(item.destination);
+    await activateAttention(item);
   });
   ipcMain.handle("attention-destination", (_event, source: string, id: string, destination: Destination) =>
     attention.setDestination(source, id, destination));
@@ -219,7 +224,7 @@ export const applicationReady = singleInstance ? app.whenReady().then(async () =
   if (process.env.BREADITOR_DEV_MODE) require("./dev-mode").doInspectorSetupOnStart();
   publish();
 
-  const attentionApi = createAttentionApi({ attention, desktop });
+  const attentionApi = createAttentionApi({ attention, desktop, prepareInput: (source, input) => codexAttention.prepareInput(source, input) });
   const bookmarkApi = createBookmarkApi({ bookmarks });
   const codexApi = createCodexInstancesApi(codexInstances);
   const server = createServer(Number(process.env.TRAY_PLATFORM_PORT || 22222), {

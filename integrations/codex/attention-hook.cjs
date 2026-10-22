@@ -166,6 +166,9 @@ async function run(input = process.stdin, options = {}) {
   const event = await readInput(input, options.timeoutMs);
   const item = toAttention(event);
   if (!item) return handleAnswers(event, options, dismiss);
+  // Keep this process alive until the server has captured its Codex ancestry.
+  // observedAt prevents a subsequently recycled hook PID from being accepted.
+  if (options.captureOrigin) item.body.originProcess = { pid: process.pid, observedAt: Date.now() };
   const correlation = rememberRequest(event, options);
   const outgoing = isAnswered(correlation, options) ? { ...item, body: { ...item.body, sound: undefined } } : item;
   await deliver(outgoing, options);
@@ -175,6 +178,8 @@ async function run(input = process.stdin, options = {}) {
 
 if (require.main === module) {
   run(process.stdin, {
+    captureOrigin: process.platform === "win32",
+    timeoutMs: process.platform === "win32" ? 3500 : TIMEOUT_MS,
     endpoint: process.env.TRAY_PLATFORM_ATTENTION_URL || ENDPOINT,
     stateDirectory: path.join(process.env.CODEX_HOME || path.join(os.homedir(), ".codex"), "tray-platform", "question-state"),
   })

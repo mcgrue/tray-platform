@@ -1,4 +1,5 @@
-import { AttentionBridge, AttentionItem, AttentionSnapshot, AttentionState, UrlDestination, WindowDestination } from "../shared/attention";
+import { AttentionBridge, AttentionItem, AttentionSnapshot, AttentionState, canNavigateAttention, codexOriginLabel, UrlDestination, WindowDestination } from "../shared/attention";
+import { initialNavigationProgress, navigationProgressButton, navigationProgressText } from "./navigation-progress";
 
 export function visibleAttentionItems(items: AttentionItem[], state: AttentionState): AttentionItem[] {
   return items.filter(item => item.state === state).sort((a, b) =>
@@ -70,10 +71,13 @@ export function mountAttentionUI(root: HTMLElement, bridge: AttentionBridge, opt
     node.style.marginTop = "10px";
     const title = element("h3");
     const metadata = element("p");
+    const origin = element("p");
     const description = element("p");
     description.style.whiteSpace = "pre-wrap";
     const destination = element("p");
     const actions = element("div");
+    const progress = element("p");
+    progress.setAttribute("role", "status");
     const failure = element("p");
     failure.setAttribute("role", "alert");
     const editor = element("details");
@@ -91,15 +95,36 @@ export function mountAttentionUI(root: HTMLElement, bridge: AttentionBridge, opt
     windowLabel.appendChild(windows);
     let choices: WindowDestination[] = [];
     let busy = false;
+    let navigating = false;
+    let opened = false;
     async function perform(work: () => Promise<void>) {
       if (busy || disposed) return;
       busy = true;
       failure.textContent = "";
+      progress.textContent = "";
       refresh();
       try { await work(); } catch (reason) { if (!disposed) failure.textContent = errorText(reason); }
       finally { busy = false; if (!disposed) refresh(); }
     }
-    const go = button("Go", () => void perform(() => bridge.goToAttention(item.source, item.id)));
+    const go = button("Go", () => void perform(async () => {
+      navigating = true;
+      opened = false;
+      const initial = initialNavigationProgress(item);
+      go.textContent = navigationProgressButton(initial);
+      progress.textContent = navigationProgressText(initial);
+      try {
+        await bridge.goToAttention(item.source, item.id);
+        if (!opened) progress.textContent = "Opened destination.";
+      }
+      catch (reason) { progress.textContent = ""; throw reason; }
+      finally { navigating = false; go.textContent = "Go"; }
+    }));
+    const unsubscribeProgress = bridge.onAttentionNavigationProgress?.(update => {
+      if (disposed || !navigating || update.source !== item.source || update.id !== item.id) return;
+      opened = update.phase === "opened";
+      go.textContent = navigationProgressButton(update);
+      progress.textContent = navigationProgressText(update);
+    });
     const snooze = element("select");
     snooze.setAttribute("aria-label", "Snooze duration");
     [5, 15, 60].forEach(minutes => {
@@ -139,7 +164,7 @@ export function mountAttentionUI(root: HTMLElement, bridge: AttentionBridge, opt
     form.append(urlLabel, saveURL);
     editor.append(summary, form, windowLabel, discover, saveWindow);
     actions.append(go, snooze, snoozeAction, done, reopen);
-    node.append(title, metadata, description, destination, actions, editor, failure);
+    node.append(title, metadata, origin, description, destination, progress, failure, actions, editor);
     const detailRoot = element("section");
     node.appendChild(detailRoot);
     const details = options.mountDetails?.(detailRoot, item);
@@ -150,10 +175,12 @@ export function mountAttentionUI(root: HTMLElement, bridge: AttentionBridge, opt
         item.state === "snoozed" && item.snoozedUntil ? `Snoozed until ${new Date(item.snoozedUntil).toLocaleString()}` : ""].filter(Boolean).join(" · ");
       description.textContent = item.description || "";
       description.hidden = !item.description;
+      origin.textContent = item.origin ? `From ${codexOriginLabel(item.origin)}` : "";
+      origin.hidden = !item.origin;
       destination.textContent = item.destination
         ? item.destination.kind === "url" ? item.destination.url : item.destination.title || `Window ${item.destination.hwnd}`
-        : "No destination. Choose a window or link below.";
-      go.disabled = busy || !item.destination;
+        : item.origin ? "Go focuses the originating VS Code window." : "No destination. Choose a window or link below.";
+      go.disabled = busy || !canNavigateAttention(item);
       snooze.hidden = snoozeAction.hidden = item.state === "done";
       done.hidden = item.state === "done";
       reopen.hidden = item.state === "pending";
@@ -161,7 +188,7 @@ export function mountAttentionUI(root: HTMLElement, bridge: AttentionBridge, opt
       if (!editor.open && document.activeElement !== url) url.value = item.destination?.kind === "url" ? item.destination.url : "";
     }
     refresh();
-    return { node, update(next: AttentionItem) { item = next; refresh(); details?.update(item); }, dispose() { details?.dispose(); } };
+    return { node, update(next: AttentionItem) { item = next; refresh(); details?.update(item); }, dispose() { unsubscribeProgress?.(); details?.dispose(); } };
   }
 
   function render() {

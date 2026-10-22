@@ -7,6 +7,12 @@ export interface DesktopRequest {
   command: "list" | "foreground" | "activate" | "processes";
   appPid: number;
   destination?: WindowDestination;
+  guard?: WindowActivationGuard;
+}
+
+export interface WindowActivationGuard {
+  title: string;
+  processes: Array<{ pid: number; startedAt: string }>;
 }
 
 export interface DesktopServiceOptions {
@@ -64,7 +70,7 @@ export class DesktopService {
     return result.pid === this.appPid ? undefined : result;
   }
 
-  async activate(destination: Destination): Promise<void> {
+  async activate(destination: Destination, guard?: WindowActivationGuard): Promise<void> {
     if (this.closed) throw new Error("Desktop service is closed.");
     if (destination?.kind === "url") {
       let url: URL;
@@ -78,7 +84,7 @@ export class DesktopService {
     }
     if (!isWindowDestination(destination)) throw new Error("Choose a valid window destination.");
     if (destination.pid === this.appPid) throw new Error("Choose a window outside Tray Platform.");
-    await this.request("activate", destination);
+    await this.request("activate", destination, guard);
   }
 
   close(): void {
@@ -87,10 +93,11 @@ export class DesktopService {
     this.children.clear();
   }
 
-  private async request(command: DesktopRequest["command"], destination?: WindowDestination): Promise<unknown> {
+  private async request(command: DesktopRequest["command"], destination?: WindowDestination, guard?: WindowActivationGuard): Promise<unknown> {
     if (this.closed) throw new Error("Desktop service is closed.");
     const request: DesktopRequest = { command, appPid: this.appPid };
     if (destination) request.destination = destination;
+    if (guard) request.guard = guard;
     const response = await (this.options.runner ? this.options.runner(request) : this.runHelper(request));
     if (!response || typeof response !== "object" || typeof (response as any).ok !== "boolean") {
       throw new Error("Windows helper returned invalid data.");

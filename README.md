@@ -169,9 +169,31 @@ with the question, choices, project directory, and session/turn/call identifiers
 Each new request plays one ICQ sound. Repeated delivery preserves the existing
 entry. Answering every question in a request automatically moves its entry to
 **Done**, preserving its history, title, and destination. Partial answers keep
-the request pending. You can still mark **Done** manually. Use the
-existing destination picker to associate a window; automatic navigation back
-to the originating conversation is not part of this bridge.
+the request pending. You can still mark **Done** manually.
+
+On Windows, new questions identify their originating Codex and VS Code processes.
+**Go** (including the pending-work chooser and shortcut) refreshes the process
+inventory and focuses that editor window. It does not select a particular Codex
+conversation within the window. The card shows the originating window title and
+process IDs. An explicitly chosen window or link overrides automatic navigation.
+Closed/restarted processes, unavailable titles, and ambiguous identical window
+titles require retrying or using **Choose destination**; folder names are never
+used to guess a window. Existing items without origin metadata keep the manual
+destination picker.
+
+Run `node integrations/codex/install.cjs` after updating the bridge, then quit and
+relaunch Tray Platform after building. The hook definitions are unchanged, so this
+bridge-only update does not require restarting Codex sessions. Origin capture is
+optional: failed discovery still delivers the question. The Windows delivery
+deadline is 3.5 seconds, within the installed background hook's 5-second timeout.
+
+Validation: `yarn test --runInBand`, `yarn pre-build`, then (from a local VS Code
+Codex session, with `ELECTRON_RUN_AS_NODE` unset):
+`node node_modules/electron/cli.js dev-infrastructure/smoke-codex-origin.cjs`.
+The isolated smoke sends a real hook payload, clicks Go with native mouse input,
+verifies the foreground HWND, checks stale-origin errors, and retains a report
+and screenshot under the system temporary directory. It briefly focuses the
+originating editor and attempts to restore the previous foreground window.
 
 Blocking answers are detected by `PostToolUse`. Async answers are detected by
 `UserPromptSubmit` when the client submits a structured

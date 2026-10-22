@@ -31,6 +31,7 @@ contextBridge.exposeInMainWorld("ipcComms", {
   setAttentionDestination: (source, id, destination) => ipcRenderer.invoke("attention-destination", source, id, destination),
   listWindows: () => ipcRenderer.invoke("desktop-windows"),
   onAttentionChanged: (callback) => subscribe("attention-changed", callback),
+  onAttentionNavigationProgress: (callback) => subscribe("attention-navigation-progress", callback),
   onShowAttention: (callback) => subscribe("attention-show", callback),
   // send's go to the main process
   setTitle: (title) => ipcRenderer.send("set-title", title),

@@ -1,5 +1,6 @@
-import { AttentionItem, AttentionSnapshot, NavigationBridge, ShortcutKey, ShortcutSetting, ShortcutSnapshot } from "../shared/attention";
+import { AttentionItem, AttentionSnapshot, canNavigateAttention, codexOriginLabel, NavigationBridge, ShortcutKey, ShortcutSetting, ShortcutSnapshot } from "../shared/attention";
 import { attentionKey, visibleAttentionItems } from "./attention-ui";
+import { initialNavigationProgress, navigationProgressButton, navigationProgressText } from "./navigation-progress";
 
 export function navigationItems(items: AttentionItem[], query: string): AttentionItem[] {
   const search = query.trim().toLocaleLowerCase();
@@ -27,6 +28,8 @@ export function mountNavigationUI(root: HTMLElement, bridge: NavigationBridge, o
   let disposed = false, attentionRevision = 0, shortcutsRevision = 0, busy = false;
   let snapshot: AttentionSnapshot = { items: [] };
   let selected: string | undefined;
+  let navigatingKey: string | undefined;
+  let progressButton = "Opening…";
   let previousFocus: HTMLElement | null;
   root.dataset.navigationPanel = "true";
   const invoke = node("button", "Take me there"); invoke.type = "button";
@@ -43,12 +46,13 @@ export function mountNavigationUI(root: HTMLElement, bridge: NavigationBridge, o
   list.id = "navigation-options";
   const details = node("p"); details.style.whiteSpace = "pre-wrap";
   const message = node("p"); message.setAttribute("role", "alert");
+  const progress = node("p"); progress.setAttribute("role", "status");
   const go = node("button", "Go"); go.type = "button";
   const close = node("button", "Close chooser"); close.type = "button";
   const settings = node("details"); settings.appendChild(node("summary", "Keyboard shortcuts"));
   const settingsError = node("p"); settingsError.setAttribute("role", "alert"); settings.appendChild(settingsError);
   const rows = new Map<ShortcutKey, { form: HTMLFormElement; input: HTMLInputElement; error: HTMLElement; setting: ShortcutSetting }>();
-  chooser.append(heading, label, list, details, message, go, close);
+  chooser.append(heading, label, list, details, progress, message, go, close);
   root.append(invoke, globalError, chooser, settings);
 
   function hide() { chooser.hidden = true; filter.setAttribute("aria-expanded", "false"); if (previousFocus?.isConnected) previousFocus.focus(); }
@@ -67,18 +71,24 @@ export function mountNavigationUI(root: HTMLElement, bridge: NavigationBridge, o
     });
     const item = items.find(entry => attentionKey(entry) === selected);
     filter.setAttribute("aria-activedescendant", item ? `navigation-option-${items.indexOf(item)}` : "");
-    details.textContent = item ? [item.title, item.project, item.description, options.resumeText?.(item), !item.destination ? "Choose a destination in the attention inbox below." : ""].filter(Boolean).join("\n") : snapshot.items.some(entry => entry.state === "pending") ? "No matching pending items." : "No pending items.";
-    go.disabled = busy || !item?.destination;
+    details.textContent = item ? [item.title, item.project, item.description, options.resumeText?.(item), item.origin ? codexOriginLabel(item.origin) : "", !canNavigateAttention(item) ? "Choose a destination in the attention inbox below." : ""].filter(Boolean).join("\n") : snapshot.items.some(entry => entry.state === "pending") ? "No matching pending items." : "No pending items.";
+    go.disabled = busy || !canNavigateAttention(item);
+    go.textContent = busy ? progressButton : "Go";
     if (restoreListFocus && !chooser.hidden) filter.focus();
   }
   async function activate() {
     if (busy) return;
     const item = navigationItems(snapshot.items, filter.value).find(entry => attentionKey(entry) === selected);
-    if (!item?.destination) return;
-    busy = true; message.textContent = ""; render();
+    if (!item || !canNavigateAttention(item)) return;
+    busy = true; message.textContent = "";
+    navigatingKey = attentionKey(item);
+    const initial = initialNavigationProgress(item);
+    progressButton = navigationProgressButton(initial);
+    progress.textContent = navigationProgressText(initial);
+    render();
     try { await bridge.goToPending(item.source, item.id); if (!disposed) hide(); }
-    catch (error) { if (!disposed) message.textContent = errorText(error); }
-    finally { busy = false; render(); }
+    catch (error) { if (!disposed) { progress.textContent = ""; message.textContent = errorText(error); } }
+    finally { busy = false; navigatingKey = undefined; render(); }
   }
   invoke.addEventListener("click", () => { globalError.textContent = ""; void bridge.navigatePending().catch(error => { if (!disposed) globalError.textContent = errorText(error); }); });
   go.addEventListener("click", () => void activate()); close.addEventListener("click", hide);
@@ -121,13 +131,20 @@ export function mountNavigationUI(root: HTMLElement, bridge: NavigationBridge, o
     bridge.onShowNavigation(event => {
       if (disposed) return;
       if (chooser.hidden) previousFocus = document.activeElement as HTMLElement;
+      if (!busy) progress.textContent = "";
       chooser.hidden = false; filter.value = ""; selected = undefined; message.textContent = event.error || ""; render(); filter.focus();
       filter.setAttribute("aria-expanded", "true");
     }),
   ];
   const initialAttention = attentionRevision, initialShortcuts = shortcutsRevision;
+  const unsubscribeProgress = bridge.onAttentionNavigationProgress?.(update => {
+    if (disposed || !busy || attentionKey(update) !== navigatingKey) return;
+    progressButton = navigationProgressButton(update);
+    progress.textContent = navigationProgressText(update);
+    render();
+  });
   const unsubscribeResume = options.onResumeChanged?.(render);
   void bridge.getAttention().then(next => { if (!disposed && initialAttention === attentionRevision) { snapshot = next; render(); } }).catch(error => { if (!disposed) globalError.textContent = errorText(error); });
   void bridge.getShortcuts().then(next => { if (!disposed && initialShortcuts === shortcutsRevision) renderSettings(next); }).catch(error => { if (!disposed) settingsError.textContent = errorText(error); });
-  return () => { disposed = true; unsubscribers.forEach(unsubscribe => unsubscribe()); unsubscribeResume?.(); root.replaceChildren(); };
+  return () => { disposed = true; unsubscribers.forEach(unsubscribe => unsubscribe()); unsubscribeProgress?.(); unsubscribeResume?.(); root.replaceChildren(); };
 }

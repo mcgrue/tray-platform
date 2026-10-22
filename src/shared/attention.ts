@@ -14,12 +14,30 @@ export interface UrlDestination {
 export type Destination = WindowDestination | UrlDestination;
 export type AttentionState = "pending" | "snoozed" | "done";
 
+export interface CodexOrigin {
+  kind: "vscode-codex";
+  codexPid: number;
+  codexStartedAt: string;
+  vscodePid: number;
+  vscodeStartedAt: string;
+  title?: string;
+}
+
 export interface AttentionInput {
   title: string;
   description?: string;
   project?: string;
   destination?: Destination;
+  origin?: CodexOrigin;
   sound?: string;
+}
+
+export function canNavigateAttention(item: AttentionInput | undefined): boolean {
+  return Boolean(item?.destination || item?.origin);
+}
+
+export function codexOriginLabel(origin: CodexOrigin): string {
+  return `${origin.title || "VS Code"} (VS Code PID ${origin.vscodePid}, Codex PID ${origin.codexPid})`;
 }
 
 export interface AttentionItem extends AttentionInput {
@@ -36,6 +54,16 @@ export interface AttentionSnapshot {
   error?: string;
 }
 
+export interface NavigationProgress {
+  phase: "scanning" | "activating" | "opened";
+  destination?: string;
+}
+
+export interface AttentionNavigationProgress extends NavigationProgress {
+  source: string;
+  id: string;
+}
+
 export interface AttentionBridge {
   getAttention(): Promise<AttentionSnapshot>;
   setAttentionState(source: string, id: string, state: AttentionState, minutes?: number): Promise<void>;
@@ -44,6 +72,7 @@ export interface AttentionBridge {
   listWindows(): Promise<WindowDestination[]>;
   onAttentionChanged(callback: (snapshot: AttentionSnapshot) => void): () => void;
   onShowAttention?(callback: () => void): () => void;
+  onAttentionNavigationProgress?(callback: (progress: AttentionNavigationProgress) => void): () => void;
 }
 
 export type ShortcutKey = "navigate" | "capture";

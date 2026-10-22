@@ -1,6 +1,6 @@
 import { IncomingMessage, ServerResponse } from "http";
 import { isIP } from "net";
-import { WindowDestination } from "../shared/attention";
+import { AttentionInput, WindowDestination } from "../shared/attention";
 import { AttentionError, AttentionService } from "./attention-service";
 
 export const MAX_ATTENTION_BODY_BYTES = 65536;
@@ -53,7 +53,11 @@ export function readJson(req: IncomingMessage): Promise<any> {
   });
 }
 
-export function createAttentionApi(options: { attention: AttentionService; desktop: { listWindows(): Promise<WindowDestination[]> } }) {
+export function createAttentionApi(options: {
+  attention: AttentionService;
+  desktop: { listWindows(): Promise<WindowDestination[]> };
+  prepareInput?: (source: string, input: any) => Promise<AttentionInput>;
+}) {
   return async (req: IncomingMessage, res: ServerResponse): Promise<boolean> => {
     const pathname = (req.url || "").split("?")[0];
     if (!pathname.startsWith("/api/")) return false;
@@ -72,7 +76,9 @@ export function createAttentionApi(options: { attention: AttentionService; deskt
         try { source = decodeURIComponent(match[1]); id = decodeURIComponent(match[2]); }
         catch { throw new AttentionError("Invalid URL encoding", 400); }
         if (!match[3] && req.method === "PUT") {
-          const item = await options.attention.upsert(source, id, await readJson(req), { createOnly: req.headers["if-none-match"] === "*" });
+          const input = await readJson(req);
+          const prepared = options.prepareInput ? await options.prepareInput(source, input) : input;
+          const item = await options.attention.upsert(source, id, prepared, { createOnly: req.headers["if-none-match"] === "*" });
           sendJson(res, 200, { item });
         } else if (match[3] && req.method === "POST") {
           const input = await readJson(req);

@@ -1,7 +1,7 @@
 import { promises as fs } from "fs";
 import path = require("path");
 import { randomBytes } from "crypto";
-import { AttentionInput, AttentionItem, AttentionSnapshot, AttentionState, Destination } from "../shared/attention";
+import { AttentionInput, AttentionItem, AttentionSnapshot, AttentionState, CodexOrigin, Destination } from "../shared/attention";
 
 const sounds = new Set<string>(Object.values(require("../shared/sounds.json").sounds).map((sound: any) => sound.id));
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
@@ -46,6 +46,20 @@ export function validateDestination(value: unknown): Destination {
   throw new AttentionError("Invalid destination kind");
 }
 
+export function validateCodexOrigin(value: unknown): CodexOrigin {
+  const origin = object(value);
+  if (origin.kind !== "vscode-codex") throw new AttentionError("Invalid attention origin");
+  for (const key of ["codexPid", "vscodePid"]) {
+    if (!Number.isSafeInteger(origin[key]) || origin[key] <= 0) throw new AttentionError("Invalid origin process ID");
+  }
+  for (const key of ["codexStartedAt", "vscodeStartedAt"]) {
+    if (!Number.isFinite(Date.parse(text(origin[key], "origin process start time", 100)))) throw new AttentionError("Invalid origin process start time");
+  }
+  return { kind: "vscode-codex", codexPid: origin.codexPid, codexStartedAt: origin.codexStartedAt,
+    vscodePid: origin.vscodePid, vscodeStartedAt: origin.vscodeStartedAt,
+    ...(origin.title === undefined ? {} : { title: text(origin.title, "origin window title", 2000) }) };
+}
+
 export function validateAttentionInput(value: unknown): AttentionInput {
   const input = object(value);
   const result: AttentionInput = { title: text(input.title, "title", 500) };
@@ -53,6 +67,7 @@ export function validateAttentionInput(value: unknown): AttentionInput {
     if (input[key] !== undefined) result[key] = text(input[key], key, maximum);
   }
   if (input.destination !== undefined) result.destination = validateDestination(input.destination);
+  if (input.origin !== undefined) result.origin = validateCodexOrigin(input.origin);
   if (input.sound !== undefined) {
     if (!sounds.has(input.sound)) throw new AttentionError("Unknown sound ID");
     result.sound = input.sound;

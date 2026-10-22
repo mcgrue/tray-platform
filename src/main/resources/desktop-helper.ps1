@@ -4,7 +4,8 @@ $ErrorActionPreference = 'Stop'
 
 try {
     $request = [Console]::In.ReadToEnd() | ConvertFrom-Json
-    Add-Type -TypeDefinition @'
+    if ($request.command -ne 'processes') {
+        Add-Type -TypeDefinition @'
 using System;
 using System.Text;
 using System.Runtime.InteropServices;
@@ -19,8 +20,36 @@ public static class TrayDesktopNative {
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr hwnd, StringBuilder text, int count);
     [DllImport("user32.dll")] public static extern bool ShowWindowAsync(IntPtr hwnd, int command);
     [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hwnd);
+    [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr hwnd);
+    [DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();
+    [DllImport("user32.dll")] public static extern bool AttachThreadInput(uint from, uint to, bool attach);
+
+    public static void ActivateWindow(IntPtr hwnd) {
+        SetForegroundWindow(hwnd);
+        System.Threading.Thread.Sleep(100);
+        if (GetForegroundWindow() == hwnd) return;
+        // Go is an explicit navigation request. The helper runs on a separate
+        // input queue; briefly share the foreground queue for the handoff.
+        uint ignored;
+        uint foregroundThread = GetWindowThreadProcessId(GetForegroundWindow(), out ignored);
+        uint targetThread = GetWindowThreadProcessId(hwnd, out ignored);
+        uint currentThread = GetCurrentThreadId();
+        bool attached = foregroundThread != 0 && foregroundThread != currentThread &&
+            AttachThreadInput(currentThread, foregroundThread, true);
+        bool targetAttached = targetThread != 0 && targetThread != currentThread && targetThread != foregroundThread &&
+            AttachThreadInput(currentThread, targetThread, true);
+        try {
+            BringWindowToTop(hwnd);
+            SetForegroundWindow(hwnd);
+            System.Threading.Thread.Sleep(100);
+        } finally {
+            if (targetAttached) AttachThreadInput(currentThread, targetThread, false);
+            if (attached) AttachThreadInput(currentThread, foregroundThread, false);
+        }
+    }
 }
 '@
+    }
     $processStartCache = @{}
     function Get-WindowDescriptor([IntPtr] $windowHandle) {
         if (-not [TrayDesktopNative]::IsWindow($windowHandle)) { return $null }
@@ -77,8 +106,21 @@ public static class TrayDesktopNative {
             if ($null -eq $actual -or $actual.pid -ne $target.pid -or $actual.processStartedAt -cne $target.processStartedAt) {
                 throw 'The selected window has closed or changed. Choose its current window again.'
             }
+            if ($request.guard) {
+                if ($actual.title -cne $request.guard.title) { throw 'The VS Code window title changed. Try Go again.' }
+                foreach ($identity in $request.guard.processes) {
+                    try {
+                        $originProcess = [System.Diagnostics.Process]::GetProcessById($identity.pid)
+                        try { $originStart = $originProcess.StartTime.ToUniversalTime() }
+                        finally { $originProcess.Dispose() }
+                    } catch { throw 'The originating Codex or VS Code process has exited. Choose a destination manually.' }
+                    if ([Math]::Abs(($originStart - ([datetime]$identity.startedAt).ToUniversalTime()).TotalMilliseconds) -ge 1) {
+                        throw 'The originating process has changed. Choose a destination manually.'
+                    }
+                }
+            }
             if ([TrayDesktopNative]::IsIconic($targetHandle)) { [void][TrayDesktopNative]::ShowWindowAsync($targetHandle, 9) }
-            [void][TrayDesktopNative]::SetForegroundWindow($targetHandle)
+            [TrayDesktopNative]::ActivateWindow($targetHandle)
             Start-Sleep -Milliseconds 100
             if ([TrayDesktopNative]::GetForegroundWindow() -ne $targetHandle) {
                 throw 'Windows refused to activate this window. Select it from the taskbar or try again.'

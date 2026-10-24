@@ -86,6 +86,25 @@ article > details, article > section > details { border-top: 1px solid var(--bor
 [data-bookmark-editor] input, [data-bookmark-editor] select { width: 100%; }
 article > h3 + p { color: var(--muted-foreground); font-size: 12px; }
 
+.attention-markdown { min-width: 0; overflow-wrap: anywhere; margin: 8px 0 14px; }
+.attention-markdown > :first-child { margin-top: 0; }
+.attention-markdown > :last-child { margin-bottom: 0; }
+.attention-markdown p { white-space: normal; margin: 8px 0; }
+.attention-markdown :is(h1, h2, h3, h4, h5, h6) { font-size: 1em; line-height: 1.4; margin: 16px 0 8px; font-weight: 600; }
+.attention-markdown h1 { font-size: 1.3em; }
+.attention-markdown h2 { font-size: 1.15em; }
+.attention-markdown :is(ul, ol) { padding-left: 24px; margin: 8px 0; }
+.attention-markdown li + li { margin-top: 4px; }
+.attention-markdown blockquote { margin: 12px 0; padding: 0 12px; border-left: 3px solid var(--border); color: var(--muted-foreground); }
+.attention-markdown a { color: var(--primary); text-decoration: underline; text-underline-offset: 2px; }
+.attention-markdown a:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
+.attention-markdown code { font-family: var(--font-mono); font-size: .9em; background: var(--muted); padding: 2px 4px; border-radius: 4px; }
+.attention-markdown pre { max-width: 100%; overflow-x: auto; white-space: pre; background: var(--muted); border-radius: var(--radius); padding: 12px; }
+.attention-markdown pre code { padding: 0; background: transparent; overflow-wrap: normal; }
+.attention-markdown hr { border: 0; border-top: 1px solid var(--border); margin: 16px 0; }
+.attention-markdown-table { max-width: 100%; overflow-x: auto; margin: 12px 0; }
+.attention-markdown :is(th, td) { padding: 8px 12px; font-family: inherit; font-variant-numeric: normal; }
+
 #navigation { margin-bottom: 28px; padding-bottom: 20px; border-bottom: 1px solid var(--border); }
 #navigation > details { margin-top: 8px; }
 [data-navigation-chooser] { background: var(--popover); color: var(--popover-foreground); }

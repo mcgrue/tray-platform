@@ -25,10 +25,10 @@ test("renders explicit and bare web links with a separate browsing context", () 
 
 test.each([
   "javascript:alert%281%29", "javascript&#58;alert%281%29", "JaVaScRiPt:alert%281%29",
-  "data:text/html,payload", "file:///C:/secret.txt", "vscode://file/C:/secret.txt",
-  "/api/attention", "../secret.txt", "//example.com", "#attention", "mailto:user@example.com",
+  "data:text/html,payload", "file://server/share/secret.txt", "vscode://file/C:/secret.txt",
+  "../secret.txt", "//example.com", "#attention", "mailto:user@example.com",
   "https://user:password@example.com", "https://",
-])("keeps non-web destination %s inert", destination => {
+])("keeps unsupported destination %s inert", destination => {
   expect(renderAttentionMarkdown(`[Open](${destination})`)).not.toContain("<a ");
 });
 

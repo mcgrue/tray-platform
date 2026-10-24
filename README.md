@@ -350,8 +350,21 @@ phone. Firefox and Chrome on Android are supported push clients.
 Item descriptions and question prompts render Markdown on desktop and phone: headings, lists,
 emphasis, quotes, tables, links, and code blocks. Plain-text line breaks are
 preserved. Raw HTML is displayed as text; images display their alt text without
-loading remote resources. Only absolute HTTP(S) links are active, and desktop
-links open in the system browser. Reload the phone page after updating; restart
+loading remote resources. HTTP(S) links open in the system browser on desktop
+and in the browser on the phone. Named links to absolute local files, such as
+`[manual checks](D:/project/PLAN.md)` or `[source](<D:/My Project/main.ts:12:3>)`,
+open in VS Code from the tray. The phone retrieves the linked file from the PC:
+UTF-8 text up to 2 MB has a read-only preview and Download link; other files
+download. Source previews highlight common languages (including TypeScript,
+JavaScript, C/C++, C#, Python, PowerShell, JSON, HTML, CSS, and YAML) based on the
+filename. Unknown formats and sources over 100,000 characters remain plain text.
+Highlighting runs on the PC; previews still prohibit scripts, preserve line
+links, and download the original bytes. Files must be 20 MB or smaller.
+File access requires the same Tailscale authorization as the inbox and an actual
+Markdown link in that item's description or verified question prompt. File
+contents are never cached; HTML and scripts are displayed as text. Relative
+paths, network shares, and arbitrary app/command URLs remain inactive.
+Reload the phone page after updating; restart
 the desktop app to load its updated renderer and link handler. Multiline question
 titles use their first nonempty line; answers retain the original full prompt.
 
@@ -415,11 +428,16 @@ Real Android lock-screen push requires a subscribed phone and manual acceptance.
 
 `yarn electron dev-infrastructure/smoke-attention-markdown.cjs` checks Markdown
 in isolated desktop and phone renderers, including narrow layout, inert HTML,
-external links, snapshot updates, and draft preservation.
+external links, local-file editor opening, phone preview/download clicks,
+snapshot updates, and draft preservation.
 
 `yarn electron dev-infrastructure/smoke-question-markdown.cjs` also checks full
 question formatting, compact titles, original answer identity, partial answers,
 and draft retention in desktop and phone renderers with isolated delivery.
+
+`yarn electron dev-infrastructure/smoke-attention-file-highlight.cjs` checks phone
+source colors, multiline tokens, line targets, narrow layout, and original-file
+downloads through the authenticated preview route.
 
 References: [Tailscale Serve](https://tailscale.com/docs/features/tailscale-serve),
 [Web Push](https://web.dev/articles/push-notifications-overview), and

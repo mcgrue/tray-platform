@@ -20,7 +20,9 @@ const prompt = ["Markdown demo", "", "## Does this render correctly?", "", "**Bo
   "- First bullet", "- Second bullet", "", "> A blockquote", "", "```ts", "const message = 'hello';", "const longLine = '" + "x".repeat(140) + "';", "```", "",
   "| Feature | Expected |", "| --- | --- |", "| Code | Monospace |", "", "[Review](https://example.com/review)", "",
   "<img src=x onerror=alert(1)>", "[Unsafe](javascript:alert%281%29)"].join("\n");
-const questions = [{ title: prompt, options: ["Looks correct", "Needs work"] }, { title: "Any **additional** notes?" }];
+const linkedFile = path.join(directory, "Question notes.md").replace(/\\/g, "/");
+fs.writeFileSync(linkedFile, "Notes available only from the verified second question.");
+const questions = [{ title: prompt, options: ["Looks correct", "Needs work"] }, { title: `Any **additional** notes? See [notes](<${linkedFile}>).` }];
 const sessions = path.join(process.env.CODEX_HOME, "sessions", "2026", "10", "24"); fs.mkdirSync(sessions, { recursive: true });
 const transcript = path.join(sessions, `rollout-2026-10-24T00-00-00-${session}.jsonl`);
 const append = row => fs.appendFileSync(transcript, JSON.stringify(row) + "\n");
@@ -63,10 +65,17 @@ async function run() {
         unsafe: prompt.querySelectorAll("img,script,[onerror],a[href^='javascript:']").length,
         overflow: document.documentElement.scrollWidth > innerWidth, previewHidden: card.querySelector(":scope > .attention-markdown").hidden };
     }), { title: "Markdown demo", heading: "Does this render correctly?", bold: "Bold", bullets: 2, blocks: true, unsafe: 0, overflow: false, previewHidden: true });
+    const href = await evaluate(window, () => document.querySelector("[data-codex-question-prompt] [data-local-file-link]").getAttribute("href"));
+    assert(href.startsWith(name === "desktop" ? "file:///" : "/api/attention/codex/"));
     await evaluate(window, () => { const input = document.querySelector('[data-question-index="1"]'); input.value = "Keep this **literal** draft"; input.dispatchEvent(new Event("input", { bubbles: true })); });
     window.showInactive(); await sleep(150);
     fs.writeFileSync(path.join(directory, name + ".png"), (await window.webContents.capturePage()).toPNG()); window.hide();
   }
+  const preview = await evaluate(phone, async () => {
+    const response = await fetch(document.querySelector("[data-codex-question-prompt] [data-local-file-link]").href);
+    return { status: response.status, text: await response.text() };
+  });
+  assert.equal(preview.status, 200); assert(preview.text.includes("Notes available only from the verified second question."));
   await attention.upsert("fixture", "unrelated", { title: "Concurrent update" });
   for (const window of [desktop, phone]) {
     await wait("snapshot update", () => evaluate(window, () => document.querySelectorAll("article").length === 2));

@@ -4,6 +4,7 @@ import { mountCodexMessageUI } from "./codex-message-ui";
 import { mountCodexQuestionUI } from "./codex-question-ui";
 import { attentionContent } from "./attention-content";
 import { renderAttentionMarkdown } from "./attention-markdown";
+import { attentionFileHref } from "../shared/attention-link";
 
 export function visibleAttentionItems(items: AttentionItem[], state: AttentionState): AttentionItem[] {
   return items.filter(item => item.state === state).sort((a, b) =>
@@ -145,7 +146,8 @@ export function mountAttentionUI(root: HTMLElement, bridge: AttentionBridge, opt
     actions.append(go, phoneLink, snooze, snoozeAction, done, reopen);
     const questionRoot = element("section");
     node.append(title, metadata, origin, description, questionRoot, destination, progress, failure, actions);
-    const question = mountCodexQuestionUI(questionRoot, bridge, item, () => { questionLoaded = true; refresh(); });
+    const markdownOptions = options.navigation === "phone" ? { localLink: (href: string) => attentionFileHref(item, href) } : {};
+    const question = mountCodexQuestionUI(questionRoot, bridge, item, () => { questionLoaded = true; refresh(); }, markdownOptions);
     const messageRoot = element("section");
     node.appendChild(messageRoot);
     const message = mountCodexMessageUI(messageRoot, bridge, item, { phone: options.navigation === "phone" });
@@ -160,7 +162,7 @@ export function mountAttentionUI(root: HTMLElement, bridge: AttentionBridge, opt
       metadata.textContent = [item.source, item.project, new Date(item.createdAt).toLocaleString(),
         item.state === "snoozed" && item.snoozedUntil ? `Snoozed until ${new Date(item.snoozedUntil).toLocaleString()}` : ""].filter(Boolean).join(" · ");
       if (renderedDescription !== content.description) {
-        description.innerHTML = renderAttentionMarkdown(content.description);
+        description.innerHTML = renderAttentionMarkdown(content.description, markdownOptions);
         renderedDescription = content.description;
       }
       description.hidden = !content.description || (questionLoaded && Boolean(content.diagnostics));

@@ -8,6 +8,7 @@ import { attentionOperations } from "./attention-operations";
 import { WebReceipts } from "./web-receipts";
 import { WebPushService } from "./web-push-service";
 import { readWebStore } from "./web-store";
+import { attentionFileResponse } from "./attention-files";
 
 export interface AttentionWebConfig { origin: string; allowedUsers: string[]; port: number; }
 export function validateWebConfig(value: any): AttentionWebConfig {
@@ -91,12 +92,21 @@ export function createAttentionWeb(options: {
         else throw new AttentionError("Unknown endpoint", 404);
         return;
       }
-      const match = /^\/api\/attention\/([^/]+)\/([^/]+)\/(state|questions|answers|messages)$/.exec(pathname);
+      const match = /^\/api\/attention\/([^/]+)\/([^/]+)\/(state|questions|answers|messages|file)$/.exec(pathname);
       if (!match) throw new AttentionError("Unknown endpoint", 404);
       let source: string, id: string;
       try { source = decodeURIComponent(match[1]); id = decodeURIComponent(match[2]); } catch { throw new AttentionError("Invalid URL encoding"); }
       validateAttentionIdentity(source, id);
       const action = match[3];
+      if (action === "file") {
+        if (req.method !== "GET") throw new AttentionError("Method not allowed", 405);
+        const item = attention.get(source, id);
+        if (!item) throw new AttentionError("Attention item no longer exists", 404);
+        const query = new URL(req.url!, config.origin).searchParams;
+        const file = await attentionFileResponse(item, query.get("target") || "", query.get("download") === "1",
+          () => operations.questions(source, id));
+        res.writeHead(200, { ...file.headers, "Content-Length": file.body.length }); res.end(file.body); return;
+      }
       if (action === "questions" && req.method === "GET") { sendJson(res, 200, await operations.questions(source, id)); return; }
       if (action === "questions" || req.method !== "POST") throw new AttentionError("Method not allowed", 405);
       const input = await readJson(req);

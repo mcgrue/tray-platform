@@ -83,19 +83,14 @@ async function run() {
   assert.equal(opened[0], "https://example.com/smoke");
   assert.equal(hasState("pending"), true, "Go retains pending disposition");
 
-  // A snapshot must not destroy an in-progress destination edit.
-  await evaluate(() => {
-    const card = document.querySelector("main article");
-    card.querySelector("details").open = true;
-    card.querySelector('input[type="url"]').value = "https://example.com/unsaved";
-  });
+  // A snapshot updates the existing card without recreating unrelated audio.
+  await evaluate(() => { window.__smokeOriginalCard = document.querySelector("main article"); });
   response = await request("PUT", "/api/attention/smoke/build", { title: "Smoke build updated", destination: { kind: "url", url: "https://example.com/smoke" } });
   assert.equal(response.status, 200);
   await waitFor("idempotent item update", () => visible("Smoke build updated"));
   assert.equal(attention.list().items.length, 1);
-  assert.equal(await evaluate(() => document.querySelector('main input[type="url"]').value), "https://example.com/unsaved");
+  assert.equal(await evaluate(() => document.querySelector("main article") === window.__smokeOriginalCard), true);
   assert.equal(await evaluate(() => document.querySelector("audio") === window.__smokeOriginalAudio), true, "Audio node survives snapshots");
-  await evaluate(() => { document.querySelector("main details").open = false; });
 
   await click("Smoke build updated", "Snooze");
   await waitFor("snooze persisted", () => hasState("snoozed"));
@@ -131,25 +126,13 @@ async function run() {
   await click("Stale destination", "Go");
   await waitFor("stale destination error visible", () => evaluate(() => {
     const card = Array.from(document.querySelectorAll("main article")).find(node => node.querySelector("h3")?.textContent === "Stale destination");
-    return Boolean(card.querySelector('[role="alert"]').textContent);
+    return Boolean(card.querySelector(':scope > [role="alert"]').textContent);
   }));
   assert.equal(attention.list().items.find(item => item.id === "stale").state, "pending");
 
-  await evaluate(() => {
-    const card = Array.from(document.querySelectorAll("main article")).find(node => node.querySelector("h3")?.textContent === "Missing destination");
-    card.querySelector("details").open = true;
-  });
-  await click("Missing destination", "Refresh windows");
-  await waitFor("window discovery completes", () => evaluate(() => {
-    const card = Array.from(document.querySelectorAll("main article")).find(node => node.querySelector("h3")?.textContent === "Missing destination");
-    return card.querySelector("details select").options.length > 0 || Boolean(card.querySelector('[role="alert"]').textContent);
-  }), 25000);
-  assert.equal(await evaluate(() => {
-    const card = Array.from(document.querySelectorAll("main article")).find(node => node.querySelector("h3")?.textContent === "Missing destination");
-    return card.querySelector('[role="alert"]').textContent;
-  }), "", "Window discovery succeeds without changing focus");
-  assert.equal(mainWindow.isVisible(), true);
-  assert.equal(mainWindow.isFocused(), false, "Window discovery must not steal focus");
+  assert.equal(await evaluate(() => [...document.querySelectorAll("main article summary, main article button")]
+    .some(node => ["Choose destination", "Refresh windows", "Save window", "Save link"].includes(node.textContent))), false,
+    "Attention cards no longer expose destination editing");
 
   await new Promise(resolve => { mainWindow.webContents.once("did-finish-load", resolve); mainWindow.reload(); });
   await waitFor("reloaded inbox restores all items", () => evaluate(() => document.querySelectorAll("main article:not([hidden])").length === 3));
@@ -157,7 +140,7 @@ async function run() {
   assert.equal(await evaluate(() => document.querySelectorAll("#soundboard").length), 1);
   assert.equal(attention.list().items.length, 3);
   assert(fs.existsSync(path.join(dataPath, "attention.json")), "Durable store exists");
-  console.log("PASS: inbox DOM, idempotent HTTP events, audio preservation, Go, snooze, Done/Reopen, destination discovery/errors, and reload persistence");
+  console.log("PASS: inbox DOM, idempotent HTTP events, audio preservation, Go, snooze, Done/Reopen, destination errors/editor removal, and reload persistence");
 }
 
 let failed = false;

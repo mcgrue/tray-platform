@@ -1,7 +1,8 @@
-import { AttentionInput, NavigationProgress } from "../shared/attention";
+import { NavigationProgress } from "../shared/attention";
 
-export function initialNavigationProgress(item: AttentionInput): NavigationProgress {
-  return { phase: item.origin && !item.destination ? "scanning" : "activating" };
+export function initialNavigationProgress(): NavigationProgress {
+  // Only the main process knows whether the cached mapping needs a rescan.
+  return { phase: "activating" };
 }
 
 export function navigationProgressText(progress: NavigationProgress): string {

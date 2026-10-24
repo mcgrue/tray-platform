@@ -4,7 +4,7 @@ $ErrorActionPreference = 'Stop'
 
 try {
     $request = [Console]::In.ReadToEnd() | ConvertFrom-Json
-    if ($request.command -ne 'processes') {
+    if ($request.command -notin @('processes', 'check-processes')) {
         Add-Type -TypeDefinition @'
 using System;
 using System.Text;
@@ -73,6 +73,20 @@ public static class TrayDesktopNative {
     }
 
     switch ($request.command) {
+        'check-processes' {
+            $result = $true
+            foreach ($identity in $request.processIdentities) {
+                try {
+                    $checkedProcess = [System.Diagnostics.Process]::GetProcessById($identity.pid)
+                    try { $checkedStart = $checkedProcess.StartTime.ToUniversalTime() }
+                    finally { $checkedProcess.Dispose() }
+                } catch [System.ArgumentException] { $result = $false; break
+                } catch [System.InvalidOperationException] { $result = $false; break }
+                if ([Math]::Abs(($checkedStart - ([datetime]$identity.startedAt).ToUniversalTime()).TotalMilliseconds) -ge 1) {
+                    $result = $false; break
+                }
+            }
+        }
         'processes' {
             $result = @(Get-CimInstance Win32_Process | ForEach-Object {
                 $entry = @{ pid = [int]$_.ProcessId; parentPid = [int]$_.ParentProcessId; name = $_.Name; startedAt = '' }

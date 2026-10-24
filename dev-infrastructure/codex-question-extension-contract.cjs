@@ -14,7 +14,8 @@ function loadQuestionContract(extensionRoot) {
     }
     throw new Error("Installed extension question contract changed: " + marker);
   };
-  const helpers = find("function n8t("), reducer = find("function Axn(");
+  // Minified names are reused across bundles; identify the question reducer by its guard.
+  const helpers = find("function n8t("), reducer = find("function Axn(e,t){if(e?.status!==");
   const extract = (source, name) => {
     const start = source.indexOf(`function ${name}(`);
     assert(start >= 0, "Missing extension function " + name);

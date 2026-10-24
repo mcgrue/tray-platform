@@ -36,8 +36,10 @@ async function run() {
   const origin = { kind: "vscode-codex", codexPid: 3, codexStartedAt: startedAt, vscodePid: 2, vscodeStartedAt: startedAt };
   const destination = { kind: "window", hwnd: "123", pid: 1, processStartedAt: startedAt, title: "dredmor" };
   const snapshot = { supported: true, scanning: false, instances: [{ ...origin, vscodeMainPid: 1, title: "dredmor" }] };
-  let finishScan, finishActivation, failActivation, scanCount = 0, activationCount = 0;
+  let finishScan, finishActivation, failActivation, finishCheck, scanCount = 0, activationCount = 0, processesRunning = false;
+  codexInstances.list = () => snapshot;
   codexInstances.refresh = () => { scanCount++; return new Promise(resolve => { finishScan = resolve; }); };
+  desktop.areProcessesRunning = () => processesRunning ? new Promise(resolve => { finishCheck = resolve; }) : Promise.resolve(false);
   desktop.listWindows = async () => [destination];
   desktop.activate = (target, guard) => {
     activationCount++;
@@ -50,11 +52,11 @@ async function run() {
   await waitFor("card", () => evaluate(() => !!document.querySelector("main article")));
   const readCard = () => evaluate(() => {
     const card = document.querySelector("main article");
-    return { status: card.querySelector('[role="status"]').textContent,
-      error: card.querySelector('[role="alert"]').textContent,
-      button: card.querySelector("button").textContent, disabled: card.querySelector("button").disabled };
+    return { status: card.querySelector(':scope > [role="status"]').textContent,
+      error: card.querySelector(':scope > [role="alert"]').textContent,
+      button: card.querySelector("[data-card-actions] button").textContent, disabled: card.querySelector("[data-card-actions] button").disabled };
   });
-  const clickGo = () => evaluate(() => document.querySelector("main article button").click());
+  const clickGo = () => evaluate(() => document.querySelector("main article [data-card-actions] button").click());
   await clickGo();
   await waitFor("rescan status", async () => (await readCard()).button === "Rescanning…" && scanCount === 1);
   assert.equal((await readCard()).disabled, true);
@@ -73,15 +75,21 @@ async function run() {
   await waitFor("confirmed success", async () => (await readCard()).status === "Opened dredmor." && !(await readCard()).disabled);
   assert.equal(attention.get("codex", "progress-smoke").state, "pending");
   await capture("opened.png");
+  processesRunning = true;
   await clickGo();
-  await waitFor("second rescan", () => scanCount === 2);
-  finishScan(snapshot);
+  await waitFor("cached process check", async () => finishCheck && (await readCard()).button === "Opening…");
+  assert.equal(scanCount, 1, "Checking a cached process must not claim or start a rescan");
+  assert.doesNotMatch((await readCard()).status, /Rescanning/);
+  finishCheck(true);
   await waitFor("second activation", () => activationCount === 2);
+  assert.equal(scanCount, 1, "Live cached processes must not cause another scan");
+  assert.equal((await readCard()).button, "Opening…");
   failActivation(new Error("Windows refused to activate this window."));
   await waitFor("visible native failure", async () => (await readCard()).error.includes("Windows refused") && !(await readCard()).disabled);
   assert.equal((await readCard()).status, "");
   await capture("failure-visible.png");
   // The pending-work chooser uses the same scan and reports failures in place.
+  processesRunning = false;
   mainWindow.webContents.send("navigation-show", {});
   const readChooser = () => evaluate(() => {
     const panel = document.querySelector('[data-navigation-chooser]');
@@ -91,12 +99,12 @@ async function run() {
   });
   await waitFor("chooser", async () => !(await readChooser()).hidden);
   await evaluate(() => [...document.querySelector('[data-navigation-chooser]').querySelectorAll("button")].find(button => button.textContent === "Go").click());
-  await waitFor("chooser rescan", async () => (await readChooser()).button === "Rescanning…" && scanCount === 3);
+  await waitFor("chooser rescan", async () => (await readChooser()).button === "Rescanning…" && scanCount === 2);
   finishScan({ ...snapshot, error: "Scan failed" });
   await waitFor("chooser failure", async () => (await readChooser()).error.includes("Cannot refresh") && (await readChooser()).button === "Go");
   assert.equal((await readChooser()).status, "");
   assert.equal(activationCount, 2, "Failed scan must not activate a stale window");
-  fs.writeFileSync(reportPath, JSON.stringify({ passed: true, dataPath, checks: ["immediate rescan feedback", "delayed activation feedback", "native-confirmed success", "other-item isolation", "native failure visible", "pending state retained", "chooser scan failure"] }, null, 2));
+  fs.writeFileSync(reportPath, JSON.stringify({ passed: true, dataPath, checks: ["stale mapped process rescan feedback", "cached Go without rescan", "delayed activation feedback", "native-confirmed success", "other-item isolation", "native failure visible", "pending state retained", "chooser scan failure"] }, null, 2));
   console.log("Navigation progress smoke passed:", reportPath);
 }
 const watchdog = setTimeout(() => { console.error("Smoke timed out"); app.exit(1); }, 90000);

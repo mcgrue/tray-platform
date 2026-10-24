@@ -3,7 +3,9 @@
 const http = require("http");
 const path = require("path");
 const os = require("os");
+const { createHash } = require("crypto");
 const { requestId, rememberRequest, isAnswered, resolveAnswered, handleAnswers } = require("./attention-answers.cjs");
+const { rememberCompletion, isAcknowledged, resolveCompletion, acknowledgeCompletions } = require("./attention-completion-dismissal.cjs");
 
 const ENDPOINT = "http://127.0.0.1:22222";
 const TIMEOUT_MS = 1500;
@@ -24,6 +26,7 @@ function shorten(value, limit) {
 }
 
 function toAttention(event) {
+  if (event?.hook_event_name === "Stop") return completionAttention(event);
   if (event?.hook_event_name !== "PreToolUse" || !new RegExp(MATCHER).test(event.tool_name)) return null;
   const session = required(event.session_id, "session_id");
   const turn = required(event.turn_id, "turn_id");
@@ -48,13 +51,37 @@ function toAttention(event) {
     source: "codex",
     id,
     body: {
-      title: shorten("Codex needs input: " + rendered[0].title, 500),
+      title: shorten(rendered[0].title, 500),
       ...(/^[a-zA-Z0-9_-]{1,200}$/.test(session) && { codexSessionId: session }),
       project: shorten(cwd, 500),
       description: shorten([
         "Project: " + cwd, "Session: " + session, "Turn: " + turn, "Call: " + call,
         "Tool: " + event.tool_name, "", ...rendered.map(question => question.text),
       ].join("\n"), 12000),
+      sound: "icq",
+    },
+  };
+}
+
+function completionAttention(event) {
+  // Codex explicitly sends null for ephemeral turns, including the desktop
+  // app's internal suggestion jobs. They have no saved conversation to resume.
+  // Preserve older/manual producers that omit transcript_path altogether.
+  if (event.transcript_path === null) return null;
+  const session = required(event.session_id, "session_id");
+  const turn = required(event.turn_id, "turn_id");
+  const cwd = required(event.cwd, "cwd");
+  const message = event.last_assistant_message;
+  if (message != null && typeof message !== "string") throw new Error("Invalid last_assistant_message");
+  const projectName = cwd.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || cwd;
+  return {
+    source: "codex",
+    id: "completion-" + createHash("sha256").update(JSON.stringify([session, turn])).digest("hex"),
+    body: {
+      title: shorten("Codex done: " + projectName, 500),
+      ...(/^[a-zA-Z0-9_-]{1,200}$/.test(session) && { codexSessionId: session }),
+      project: shorten(cwd, 500),
+      description: shorten(message?.trim() || "Codex finished this turn.", 12000),
       sound: "icq",
     },
   };
@@ -77,10 +104,10 @@ function dismiss(item, options = {}) {
   return request(item, { ...options, dismiss: true });
 }
 
-function request(item, { endpoint = ENDPOINT, timeoutMs = TIMEOUT_MS, dismiss: resolving = false } = {}) {
-  const url = new URL("/api/attention/" + encodeURIComponent(item.source) + "/" + encodeURIComponent(item.id) +
+function request(item, { endpoint = ENDPOINT, timeoutMs = TIMEOUT_MS, dismiss: resolving = false, list = false } = {}) {
+  const url = new URL(list ? "/api/attention" : "/api/attention/" + encodeURIComponent(item.source) + "/" + encodeURIComponent(item.id) +
     (resolving ? "/state" : ""), localEndpoint(endpoint));
-  const body = JSON.stringify(resolving ? { state: "done" } : item.body);
+  const body = list ? undefined : JSON.stringify(resolving ? { state: "done" } : item.body);
   return new Promise((resolve, reject) => {
     let settled = false;
     const finish = (error, value) => {
@@ -90,14 +117,14 @@ function request(item, { endpoint = ENDPOINT, timeoutMs = TIMEOUT_MS, dismiss: r
       error ? reject(error) : resolve(value);
     };
     const req = http.request(url, {
-      method: resolving ? "POST" : "PUT",
-      headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body), ...(!resolving && { "If-None-Match": "*" }) },
+      method: list ? "GET" : resolving ? "POST" : "PUT",
+      headers: list ? {} : { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body), ...(!resolving && { "If-None-Match": "*" }) },
     }, res => {
       const chunks = [];
       let size = 0;
       res.on("data", chunk => {
         size += chunk.length;
-        if (size > MAX_RESPONSE_BYTES) req.destroy(new Error("Attention response too large"));
+        if (size > (list ? 8 * 1024 * 1024 : MAX_RESPONSE_BYTES)) req.destroy(new Error("Attention response too large"));
         else chunks.push(chunk);
       });
       res.on("error", error => finish(error));
@@ -105,7 +132,7 @@ function request(item, { endpoint = ENDPOINT, timeoutMs = TIMEOUT_MS, dismiss: r
       res.on("end", () => {
         try {
           // Already delivered: preserve all human edits and the item's disposition.
-          if (!resolving && res.statusCode === 412) { finish(null, null); return; }
+          if (!resolving && !list && res.statusCode === 412) { finish(null, null); return; }
           // The answer hook can beat the background creation hook. The durable
           // answer marker lets creation finish the dismissal after its PUT.
           if (resolving && res.statusCode === 404) { finish(null, false); return; }
@@ -113,7 +140,10 @@ function request(item, { endpoint = ENDPOINT, timeoutMs = TIMEOUT_MS, dismiss: r
           let response;
           try { response = JSON.parse(Buffer.concat(chunks).toString("utf8")); }
           catch { throw new Error("Invalid attention response JSON"); }
-          if (resolving) {
+          if (list) {
+            if (!Array.isArray(response?.items) || response.error) throw new Error("Unexpected attention snapshot");
+            finish(null, response.items);
+          } else if (resolving) {
             if (response?.ok !== true) throw new Error("Unexpected attention response");
             finish(null, true);
           } else {
@@ -164,12 +194,30 @@ function readInput(input, timeoutMs = TIMEOUT_MS) {
 }
 
 async function run(input = process.stdin, options = {}) {
+  const observedAt = Date.now();
   const event = await readInput(input, options.timeoutMs);
   const item = toAttention(event);
-  if (!item) return handleAnswers(event, options, dismiss);
+  if (!item) {
+    if (event?.hook_event_name !== "UserPromptSubmit") return handleAnswers(event, options, dismiss);
+    // Failure in completion acknowledgement must not prevent question answers.
+    const results = await Promise.allSettled([
+      handleAnswers(event, options, dismiss),
+      acknowledgeCompletions(event, options, config => request(null, { ...config, list: true }), dismiss, observedAt),
+    ]);
+    const failure = results.find(result => result.status === "rejected");
+    if (failure) throw failure.reason;
+    return results[1].value ? { ...results[0].value, completionsDismissed: results[1].value } : results[0].value;
+  }
   // Keep this process alive until the server has captured its Codex ancestry.
   // observedAt prevents a subsequently recycled hook PID from being accepted.
   if (options.captureOrigin) item.body.originProcess = { pid: process.pid, observedAt: Date.now() };
+  if (event.hook_event_name === "Stop") {
+    const record = rememberCompletion(event, item, options, observedAt);
+    const outgoing = isAcknowledged(record) ? { ...item, body: { ...item.body, sound: undefined } } : item;
+    await deliver(outgoing, options);
+    await resolveCompletion(record, options, dismiss);
+    return { source: item.source, id: item.id };
+  }
   const correlation = rememberRequest(event, options);
   const outgoing = isAnswered(correlation, options) ? { ...item, body: { ...item.body, sound: undefined } } : item;
   await deliver(outgoing, options);
@@ -183,6 +231,7 @@ if (require.main === module) {
     timeoutMs: process.platform === "win32" ? 3500 : TIMEOUT_MS,
     endpoint: process.env.TRAY_PLATFORM_ATTENTION_URL || ENDPOINT,
     stateDirectory: path.join(process.env.CODEX_HOME || path.join(os.homedir(), ".codex"), "tray-platform", "question-state"),
+    completionStateDirectory: path.join(process.env.CODEX_HOME || path.join(os.homedir(), ".codex"), "tray-platform", "completion-state"),
   })
     .catch(error => {
       // A missing tray process must not affect the agent or reveal question text in logs.

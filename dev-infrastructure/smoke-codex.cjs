@@ -71,19 +71,22 @@ async function run() {
       assert.equal(mainWindow.isFocused(), false, "Answer handling must not steal focus");
     },
   })));
-  assert.equal(attention.list().items.length, 3, "Three independent runtime sessions create distinct entries");
-  assert.deepEqual(sounds, ["icq", "icq", "icq"], "One sound per request");
+  const questions = () => attention.list().items.filter(item => item.id.startsWith("question-"));
+  assert.equal(questions().length, 3, "Three independent runtime sessions create distinct questions");
+  await waitFor(() => sounds.length === attention.list().items.length, "one sound per item");
+  assert(sounds.every(sound => sound === "icq"));
   await Promise.all(results.flatMap(result => Array.from({ length: 3 }, () => deliver(toAttention(result.event), { endpoint }))));
-  assert.equal(attention.list().items.length, 3);
-  assert.equal(sounds.length, 3, "Retries never replay the sound");
-  assert(attention.list().items.every(item => item.state === "done"));
+  assert.equal(questions().length, 3);
+  assert.equal(sounds.length, attention.list().items.length, "Retries never replay the sound");
+  assert(questions().every(item => item.state === "done"));
   await evaluate(() => {
     Array.from(document.querySelectorAll('nav[aria-label="Attention views"] button')).find(node => node.textContent.startsWith("Done")).click();
   });
   await waitFor(() => evaluate(() => document.querySelectorAll("main article:not([hidden])").length === 3), "Done history rendered");
   const persisted = JSON.parse(fs.readFileSync(path.join(dataPath, "attention.json"), "utf8"));
-  assert.equal(persisted.items.length, 3);
-  assert(persisted.items.every(item => item.state === "done"));
+  const persistedQuestions = persisted.items.filter(item => item.id.startsWith("question-"));
+  assert.equal(persistedQuestions.length, 3);
+  assert(persistedQuestions.every(item => item.state === "done"));
   console.log("PASS: three Codex runtimes -> command hooks -> HTTP -> rendered inbox; blocking and async answers auto-dismiss, partial replies stay pending, Done history persists, one sound each, retry dedupe, no focus change.");
   console.log(JSON.stringify({ dataPath, fixtures: results.map(result => result.evidence) }, null, 2));
 }

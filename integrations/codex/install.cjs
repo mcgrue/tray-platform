@@ -40,6 +40,7 @@ function install({ codexHome = process.env.CODEX_HOME || path.join(os.homedir(),
     { event: "PreToolUse", matcher: MATCHER, handler },
     { event: "PostToolUse", matcher: "^request_user_input$", handler: { ...handler, statusMessage: "Dismissing answered questions" } },
     { event: "UserPromptSubmit", handler: { ...handler, statusMessage: "Dismissing answered questions" } },
+    { event: "Stop", handler: { ...handler, statusMessage: "Notifying Tray Platform of completion" } },
   ];
   const addedEvents = [];
   for (const definition of definitions) {
@@ -63,6 +64,7 @@ function install({ codexHome = process.env.CODEX_HOME || path.join(os.homedir(),
     }
   }
   fs.mkdirSync(directory, { recursive: true });
+  const completionBackup = replaceWithBackup(path.join(directory, "attention-completion-dismissal.cjs"), fs.readFileSync(path.join(__dirname, "attention-completion-dismissal.cjs")));
   const answersBackup = replaceWithBackup(path.join(directory, "attention-answers.cjs"), fs.readFileSync(path.join(__dirname, "attention-answers.cjs")));
   const bridgeBackup = replaceWithBackup(bridgePath, fs.readFileSync(path.join(__dirname, "attention-hook.cjs")));
   let hooksBackup = null;
@@ -72,13 +74,13 @@ function install({ codexHome = process.env.CODEX_HOME || path.join(os.homedir(),
     hooksBackup = replaceWithBackup(hooksPath, Buffer.from(JSON.stringify(config, null, 2) + "\n"));
   }
   return { hooksPath, bridgePath, command, commandWindows, added: addedEvents.length > 0, addedEvents,
-    backups: [bridgeBackup, answersBackup, hooksBackup].filter(Boolean) };
+    backups: [bridgeBackup, answersBackup, completionBackup, hooksBackup].filter(Boolean) };
 }
 
 if (require.main === module) {
   try {
     console.log(JSON.stringify(install(), null, 2));
-    console.log("Review and trust the Tray Platform PreToolUse, PostToolUse, and UserPromptSubmit hooks in Codex /hooks. After adding hooks, wait for active work to finish, then use Developer: Reload Window in existing VS Code windows or restart Codex CLI. Existing sessions retain their loaded hook configuration.");
+    console.log("Review and trust the Tray Platform PreToolUse, PostToolUse, UserPromptSubmit, and Stop hooks in Codex /hooks. After adding hooks, wait for active work to finish, then use Developer: Reload Window in existing VS Code windows or restart Codex CLI. Existing sessions retain their loaded hook configuration.");
   } catch (error) { console.error(error.message); process.exitCode = 1; }
 }
 module.exports = { install };

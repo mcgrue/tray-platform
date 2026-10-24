@@ -17,7 +17,8 @@ const window = { kind: "window" as const, hwnd: "123", pid: 1, processStartedAt:
 const snapshot = (): CodexInstancesSnapshot => ({ instances: [instance], supported: true, scanning: false, scannedAt: Date.now() });
 
 function fixture() {
-  const desktop = { listProcesses: jest.fn(async () => processes), listWindows: jest.fn(async () => [window]), activate: jest.fn(async () => {}) };
+  const desktop = { listProcesses: jest.fn(async () => processes), areProcessesRunning: jest.fn(async () => true),
+    listWindows: jest.fn(async () => [window]), activate: jest.fn(async () => {}) };
   const inventory = { list: jest.fn(snapshot), refresh: jest.fn(async () => snapshot()) };
   return { desktop, inventory, service: new CodexAttention(desktop, inventory) };
 }
@@ -63,11 +64,13 @@ test("origin survives persistence and explicit destination edits; malformed orig
   }
 });
 
-test("Go refreshes metadata, selects a unique HWND in the correct main process, and passes activation guards", async () => {
+test("Go uses the live cached mapping, selects a unique HWND, and passes activation guards without rescanning", async () => {
   const { service, desktop, inventory } = fixture();
   desktop.listWindows.mockResolvedValue([window, { ...window, hwnd: "456", pid: 99 }]);
   await service.activate({ title: "Question", origin: { ...origin, title: "Old title" } });
-  expect(inventory.refresh).toHaveBeenCalledTimes(1);
+  expect(inventory.refresh).not.toHaveBeenCalled();
+  expect(desktop.listProcesses).not.toHaveBeenCalled();
+  expect(desktop.areProcessesRunning).toHaveBeenCalledWith([{ pid: 3, startedAt }, { pid: 2, startedAt }]);
   expect(desktop.activate).toHaveBeenCalledWith(window, { title: "Workspace", processes: [
     { pid: 3, startedAt }, { pid: 2, startedAt },
   ] });
@@ -77,12 +80,39 @@ test.each(["duplicate", "missing", "recycled", "exited", "untitled", "scan-faile
   const { service, desktop, inventory } = fixture();
   if (mode === "duplicate") desktop.listWindows.mockResolvedValue([window, { ...window, hwnd: "456" }]);
   if (mode === "missing") desktop.listWindows.mockResolvedValue([]);
+  if (["recycled", "exited", "scan-failed"].includes(mode)) desktop.areProcessesRunning.mockResolvedValue(false);
   if (mode === "recycled") inventory.refresh.mockResolvedValue({ ...snapshot(), instances: [{ ...instance, codexStartedAt: "2030-01-01T00:00:00Z" }] });
   if (mode === "exited") inventory.refresh.mockResolvedValue({ ...snapshot(), instances: [] });
-  if (mode === "untitled") inventory.refresh.mockResolvedValue({ ...snapshot(), instances: [{ ...instance, title: undefined }] });
+  if (mode === "untitled") inventory.list.mockReturnValue({ ...snapshot(), instances: [{ ...instance, title: undefined }] });
   if (mode === "scan-failed") inventory.refresh.mockResolvedValue({ ...snapshot(), error: "failed" });
-  if (mode === "unsupported") inventory.refresh.mockResolvedValue({ ...snapshot(), supported: false });
+  if (mode === "unsupported") inventory.list.mockReturnValue({ ...snapshot(), supported: false });
   await expect(service.activate({ title: "Question", origin })).rejects.toThrow();
+  expect(desktop.activate).not.toHaveBeenCalled();
+  expect(inventory.refresh).toHaveBeenCalledTimes(["recycled", "exited", "scan-failed"].includes(mode) ? 1 : 0);
+});
+
+test("Go does not rescan a missing mapping or guess a replacement process", async () => {
+  const { service, desktop, inventory } = fixture();
+  inventory.list.mockReturnValue({ ...snapshot(), instances: [] });
+  await expect(service.activate({ title: "Question", origin })).rejects.toThrow("not in the cached mapping");
+  expect(desktop.areProcessesRunning).not.toHaveBeenCalled();
+  expect(desktop.activate).not.toHaveBeenCalled();
+  expect(inventory.refresh).not.toHaveBeenCalled();
+});
+
+test("a prior scan error does not block a live cached mapping", async () => {
+  const { service, desktop, inventory } = fixture();
+  inventory.list.mockReturnValue({ ...snapshot(), error: "Previous scan failed" });
+  await service.activate({ title: "Question", origin });
+  expect(desktop.activate).toHaveBeenCalledTimes(1);
+  expect(inventory.refresh).not.toHaveBeenCalled();
+});
+
+test("process-check failure does not claim the process exited or start a scan", async () => {
+  const { service, desktop, inventory } = fixture();
+  desktop.areProcessesRunning.mockRejectedValue(new Error("Process check unavailable"));
+  await expect(service.activate({ title: "Question", origin })).rejects.toThrow("Process check unavailable");
+  expect(inventory.refresh).not.toHaveBeenCalled();
   expect(desktop.activate).not.toHaveBeenCalled();
 });
 

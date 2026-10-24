@@ -59,10 +59,11 @@ test("an answered transcript remains answered after a service restart", async ()
   expect(messages.send).not.toHaveBeenCalled();
 });
 
-test.each([null, [], [{ index: 0, answer: "First" }], [{ index: 0, answer: "First" }, { index: 0, answer: "Again" }],
-  [{ index: 0, answer: "First" }, { index: 5, answer: "Wrong" }], [{ index: 0, answer: "" }, { index: 1, answer: "No" }]])("rejects missing, duplicate, unknown, or empty answers: %j", async answers => {
+test.each([null, [], [{ index: 0, answer: "First" }, { index: 0, answer: "Again" }],
+  [{ index: 0, answer: "First" }, { index: 5, answer: "Wrong" }], [{ index: 0, answer: "" }, { index: 1, answer: "No" }]]
+  .map(answers => ({ answers })))("rejects missing, duplicate, unknown, or empty answers: $answers", async ({ answers }) => {
   const { service, messages } = await fixture();
-  await expect(service.answer(item, answers)).rejects.toThrow("every unanswered question");
+  await expect(service.answer(item, answers)).rejects.toThrow("an unanswered question");
   expect(messages.send).not.toHaveBeenCalled();
 });
 
@@ -70,6 +71,26 @@ test("rejects oversized envelopes before delivery", async () => {
   const { service, messages } = await fixture();
   await expect(service.answer(item, [{ index: 0, answer: "x".repeat(20000) }, { index: 1, answer: "No" }])).rejects.toThrow("message limit");
   expect(messages.send).not.toHaveBeenCalled();
+});
+
+test("submits choices individually, retains unanswered questions, and rejects repeating an accepted answer", async () => {
+  const { service, messages } = await fixture();
+  expect((await service.answer(item, [{ index: 0, answer: "First" }])).remainingQuestions).toBe(1);
+  expect(parseQuestionReplies(messages.send.mock.calls[0][1] as string)).toEqual([reply(0, { answer: "First" })]);
+  expect((await service.questions(item)).map(question => question.answered)).toEqual([true, false]);
+  await expect(service.answer(item, [{ index: 0, answer: "Second" }])).rejects.toThrow("an unanswered question");
+  expect(messages.send).toHaveBeenCalledTimes(1);
+  expect((await service.answer(item, [{ index: 1, answer: "Manual answer" }])).remainingQuestions).toBe(0);
+  expect((await service.questions(item)).every(question => question.answered)).toBe(true);
+});
+
+test("a failed later answer preserves earlier accepted answers without replay", async () => {
+  const { service, messages } = await fixture();
+  await service.answer(item, [{ index: 1, answer: "No" }]);
+  messages.send.mockRejectedValue(new Error("Delivery unknown"));
+  await expect(service.answer(item, [{ index: 0, answer: "First" }])).rejects.toThrow("Delivery unknown");
+  expect((await service.questions(item)).map(question => question.answered)).toEqual([false, true]);
+  expect(messages.send).toHaveBeenCalledTimes(2);
 });
 
 test.each([

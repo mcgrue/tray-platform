@@ -12,7 +12,7 @@ import { CodexMessageService } from "./codex-message-service";
 export class CodexQuestionService {
   private readonly files = new Map<string, string>();
   private readonly sending = new Set<string>();
-  private readonly answered = new Set<string>();
+  private readonly answered = new Map<string, Set<number>>();
 
   constructor(private readonly messages: Pick<CodexMessageService, "send">,
     private readonly sessionsRoot = path.join(process.env.CODEX_HOME || path.join(os.homedir(), ".codex"), "sessions")) {}
@@ -82,30 +82,33 @@ export class CodexQuestionService {
       }
     } finally { lines.close(); stream.destroy(); }
     if (session !== identity.session || !questions) throw new Error("Cannot find the verified original question. Answer it in Codex.");
-    return questions.map(question => ({ ...question, answered: this.answered.has(item.id) || replies.some(reply =>
+    return questions.map(question => ({ ...question, answered: Boolean(this.answered.get(item.id)?.has(question.index)) || replies.some(reply =>
       reply.questionItemId === questionReplyId(identity.call, question.index) && reply.question === question.title) }));
   }
 
   async answer(item: AttentionItem, value: unknown): Promise<CodexAnswerReceipt> {
     const identity = this.identity(item);
-    if (item.state === "done" || this.answered.has(item.id)) throw new Error("This question is already answered. Use Message Codex for a follow-up.");
+    if (item.state === "done") throw new Error("This question is already answered. Use Message Codex for a follow-up.");
     if (this.sending.has(item.id)) throw new Error("An answer is already being sent to this question.");
     this.sending.add(item.id);
     try {
       const pending = (await this.questions(item)).filter(question => !question.answered);
       if (!pending.length) throw new Error("This question is already answered in Codex. Use Done to dismiss the Tray item.");
-      if (!Array.isArray(value) || value.length !== pending.length || new Set(value.map(answer => answer?.index)).size !== pending.length ||
+      if (!Array.isArray(value) || !value.length || new Set(value.map(answer => answer?.index)).size !== value.length ||
         value.some(answer => !answer || !pending.some(question => question.index === answer.index) ||
           typeof answer.answer !== "string" || !answer.answer.trim() || answer.answer.length > MAX_CODEX_MESSAGE_LENGTH)) {
-        throw new Error("Enter an answer for every unanswered question. Use Reload questions if the question changed.");
+        throw new Error("Enter a nonempty answer for an unanswered question. Use Reload questions if the question changed.");
       }
-      const replies = pending.map(question => ({ questionItemId: questionReplyId(identity.call, question.index),
+      const selected = pending.filter(question => value.some(answer => answer.index === question.index));
+      const replies = selected.map(question => ({ questionItemId: questionReplyId(identity.call, question.index),
         question: question.title, answer: value.find(answer => answer.index === question.index).answer }));
       const message = `<send_user_message_question_reply>\n${JSON.stringify(replies)}\n</send_user_message_question_reply>`;
       if (message.length > MAX_CODEX_MESSAGE_LENGTH) throw new Error("The questions and answers exceed the message limit. Shorten your answers or answer in Codex.");
       const receipt = await this.messages.send(item, message);
-      this.answered.add(item.id);
-      return receipt;
+      const answered = this.answered.get(item.id) || new Set<number>();
+      selected.forEach(question => answered.add(question.index));
+      this.answered.set(item.id, answered);
+      return { ...receipt, remainingQuestions: pending.length - selected.length };
     } finally { this.sending.delete(item.id); }
   }
 }

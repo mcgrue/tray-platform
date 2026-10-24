@@ -1,20 +1,19 @@
 import { AttentionBridge, AttentionItem } from "../shared/attention";
 import { MAX_CODEX_MESSAGE_LENGTH } from "../shared/codex-message";
-import { CodexQuestion, hasCodexAsyncQuestion } from "../shared/codex-question";
+import { CodexQuestion, CodexQuestionAnswer, hasCodexAsyncQuestion } from "../shared/codex-question";
 
-export function mountCodexQuestionUI(root: HTMLElement, bridge: AttentionBridge, initial: AttentionItem) {
-  let item = initial, disposed = false, loading = false, loaded = false, sending = false, sent = false;
+export function mountCodexQuestionUI(root: HTMLElement, bridge: AttentionBridge, initial: AttentionItem, onLoaded?: () => void) {
+  let item = initial, disposed = false, loading = false, loaded = false, sending = false;
   let questions: CodexQuestion[] = [];
   const fields = new Map<number, HTMLTextAreaElement>();
   const controls: Array<HTMLButtonElement | HTMLTextAreaElement> = [];
   const editor = document.createElement("details");
   editor.dataset.codexQuestion = "";
+  editor.open = initial.state !== "done";
   const summary = document.createElement("summary");
   summary.textContent = "Answer question";
   const form = document.createElement("form");
   const prompts = document.createElement("div");
-  const hint = document.createElement("p");
-  hint.textContent = "Answer every open question. Ctrl+Enter submits your answers and resolves this item.";
   const send = document.createElement("button");
   send.type = "submit";
   send.dataset.submitAnswer = "";
@@ -25,7 +24,7 @@ export function mountCodexQuestionUI(root: HTMLElement, bridge: AttentionBridge,
   status.setAttribute("role", "status");
   const error = document.createElement("p");
   error.setAttribute("role", "alert");
-  form.append(prompts, hint, send, retry, status, error);
+  form.append(prompts, send, retry, status, error);
   editor.append(summary, form);
   root.appendChild(editor);
 
@@ -34,71 +33,81 @@ export function mountCodexQuestionUI(root: HTMLElement, bridge: AttentionBridge,
 
   function refresh() {
     editor.hidden = !hasCodexAsyncQuestion(item) || !bridge.getAttentionQuestion || !bridge.answerAttentionQuestion;
-    const disabled = loading || sending || sent || item.state === "done";
+    const disabled = loading || sending || item.state === "done";
     controls.forEach(control => { control.disabled = disabled; });
-    send.disabled = disabled || !loaded || !fields.size || [...fields.values()].some(field => !field.value.trim());
+    send.disabled = disabled || !loaded || ![...fields.values()].some(field => field.value.trim());
+    send.hidden = loaded && !fields.size;
     send.textContent = sending ? "Sending answers…" : fields.size > 1 ? "Send answers" : "Send answer";
-    retry.hidden = loading || sent || item.state === "done" || (loaded && !error.textContent);
+    retry.hidden = loading || item.state === "done" || (loaded && !error.textContent);
     retry.disabled = disabled;
-    hint.hidden = !fields.size;
+  }
+
+  function renderQuestions() {
+    const drafts = new Map([...fields].map(([index, field]) => [index, field.value]));
+    prompts.replaceChildren(); fields.clear(); controls.length = 0;
+    for (const question of questions) {
+      const group = document.createElement("fieldset");
+      const legend = document.createElement("legend");
+      legend.textContent = question.title;
+      group.appendChild(legend);
+      if (question.answered) {
+        const answered = document.createElement("p"); answered.textContent = "Answered in Codex."; group.appendChild(answered);
+      } else {
+        const label = document.createElement("label");
+        label.textContent = "Your answer";
+        const input = document.createElement("textarea");
+        input.rows = 3; input.maxLength = MAX_CODEX_MESSAGE_LENGTH; input.dataset.questionIndex = String(question.index);
+        input.value = drafts.get(question.index) || "";
+        input.addEventListener("input", refresh);
+        input.addEventListener("keydown", event => {
+          if (event.key === "Enter" && (event.ctrlKey || event.metaKey) && !event.isComposing) { event.preventDefault(); void submit(); }
+        });
+        fields.set(question.index, input); controls.push(input);
+        const choices = document.createElement("div");
+        choices.style.display = "flex"; choices.style.flexWrap = "wrap"; choices.style.gap = "6px";
+        for (const option of question.options) {
+          const choice = document.createElement("button");
+          choice.type = "button"; choice.textContent = option;
+          choice.addEventListener("click", () => { void submit([{ index: question.index, answer: option }]); });
+          choices.appendChild(choice); controls.push(choice);
+        }
+        label.appendChild(input); group.append(choices, label);
+      }
+      prompts.appendChild(group);
+    }
   }
 
   async function load(force = false) {
-    if (disposed || loading || sending || (loaded && !force) || !bridge.getAttentionQuestion) return;
+    if (disposed || editor.hidden || loading || sending || (loaded && !force) || !bridge.getAttentionQuestion) return;
     const drafts = new Map(questions.map(question => [question.index, { title: question.title, value: fields.get(question.index)?.value || "" }]));
     loading = true;
     error.textContent = "";
     status.textContent = "Loading original questions…";
     refresh();
     try {
-      questions = await bridge.getAttentionQuestion(item.source, item.id);
+      const next = await bridge.getAttentionQuestion(item.source, item.id);
       if (disposed) return;
-      prompts.replaceChildren(); fields.clear(); controls.length = 0;
-      for (const question of questions) {
-        const group = document.createElement("fieldset");
-        const legend = document.createElement("legend");
-        legend.textContent = question.title;
-        group.appendChild(legend);
-        if (question.answered) {
-          const answered = document.createElement("p"); answered.textContent = "Already answered in Codex."; group.appendChild(answered);
-        } else {
-          const label = document.createElement("label");
-          label.textContent = "Your answer";
-          const input = document.createElement("textarea");
-          input.rows = 3; input.maxLength = MAX_CODEX_MESSAGE_LENGTH; input.dataset.questionIndex = String(question.index);
-          if (drafts.get(question.index)?.title === question.title) input.value = drafts.get(question.index)!.value;
-          input.addEventListener("input", refresh);
-          input.addEventListener("keydown", event => {
-            if (event.key === "Enter" && (event.ctrlKey || event.metaKey) && !event.isComposing) { event.preventDefault(); void submit(); }
-          });
-          fields.set(question.index, input); controls.push(input);
-          const choices = document.createElement("div");
-          choices.style.display = "flex"; choices.style.flexWrap = "wrap"; choices.style.gap = "6px";
-          for (const option of question.options) {
-            const choice = document.createElement("button");
-            choice.type = "button"; choice.textContent = option;
-            choice.addEventListener("click", () => { input.value = option; refresh(); input.focus(); });
-            choices.appendChild(choice); controls.push(choice);
-          }
-          label.appendChild(input); group.append(choices, label);
-        }
-        prompts.appendChild(group);
-      }
+      questions = next;
+      // Do not carry a draft into a different question after an explicit reload.
+      for (const question of questions) if (drafts.get(question.index)?.title !== question.title) fields.delete(question.index);
+      renderQuestions();
       loaded = true;
       status.textContent = fields.size ? "" : "Already answered in Codex. Use Done to dismiss this Tray item.";
-      fields.values().next().value?.focus();
+      onLoaded?.();
     } catch (reason) { if (!disposed) { status.textContent = ""; error.textContent = failure(reason); } }
     finally { loading = false; if (!disposed) refresh(); }
   }
 
-  async function submit() {
-    if (disposed || send.disabled || sending || !bridge.answerAttentionQuestion) return;
+  async function submit(selected?: CodexQuestionAnswer[]) {
+    if (disposed || loading || sending || item.state === "done" || !loaded || !bridge.answerAttentionQuestion) return;
+    const answers = selected || [...fields].filter(([, field]) => field.value.trim()).map(([index, field]) => ({ index, answer: field.value }));
+    if (!answers.length || answers.some(answer => !fields.has(answer.index))) return;
     sending = true; error.textContent = ""; status.textContent = "Sending answers to Codex…"; refresh();
     try {
-      const receipt = await bridge.answerAttentionQuestion(item.source, item.id,
-        [...fields.entries()].map(([index, field]) => ({ index, answer: field.value })));
+      const receipt = await bridge.answerAttentionQuestion(item.source, item.id, answers);
       if (disposed) return;
-      sent = true; fields.forEach(field => { field.value = ""; });
+      questions.forEach(question => { if (receipt.remainingQuestions === 0 || answers.some(answer => answer.index === question.index)) question.answered = true; });
+      renderQuestions();
       status.textContent = "Answers sent to Codex.";
       error.textContent = receipt.warning || "";
     } catch (reason) { if (!disposed) { status.textContent = ""; error.textContent = failure(reason); } }
@@ -108,5 +117,6 @@ export function mountCodexQuestionUI(root: HTMLElement, bridge: AttentionBridge,
   retry.addEventListener("click", () => { void load(true); });
   editor.addEventListener("toggle", () => { if (editor.open) void load(); });
   refresh();
+  if (!editor.hidden && editor.open) void load();
   return { update(next: AttentionItem) { item = next; refresh(); }, dispose() { disposed = true; } };
 }

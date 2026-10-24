@@ -1,7 +1,8 @@
-import { AttentionBridge, AttentionItem, AttentionSnapshot, AttentionState, canNavigateAttention, codexOriginLabel, UrlDestination, WindowDestination } from "../shared/attention";
+import { AttentionBridge, AttentionItem, AttentionSnapshot, AttentionState, canNavigateAttention, codexOriginLabel, UrlDestination } from "../shared/attention";
 import { initialNavigationProgress, navigationProgressButton, navigationProgressText } from "./navigation-progress";
 import { mountCodexMessageUI } from "./codex-message-ui";
 import { mountCodexQuestionUI } from "./codex-question-ui";
+import { attentionContent } from "./attention-content";
 
 export function visibleAttentionItems(items: AttentionItem[], state: AttentionState): AttentionItem[] {
   return items.filter(item => item.state === state).sort((a, b) =>
@@ -84,20 +85,11 @@ export function mountAttentionUI(root: HTMLElement, bridge: AttentionBridge, opt
     progress.setAttribute("role", "status");
     const failure = element("p");
     failure.setAttribute("role", "alert");
-    const editor = element("details");
-    const summary = element("summary", "Choose destination");
-    const form = element("form");
-    const urlLabel = element("label", "Link ");
-    const url = element("input");
-    url.type = "url";
-    url.placeholder = "https://…";
-    urlLabel.appendChild(url);
-    const saveURL = element("button", "Save link");
-    saveURL.type = "submit";
-    const windowLabel = element("label", "Window ");
-    const windows = element("select");
-    windowLabel.appendChild(windows);
-    let choices: WindowDestination[] = [];
+    const diagnostics = element("details");
+    diagnostics.dataset.attentionDiagnostics = "";
+    const diagnosticText = element("p");
+    diagnostics.append(element("summary", "Details"), diagnosticText);
+    let questionLoaded = false;
     let busy = false;
     let navigating = false;
     let opened = false;
@@ -113,7 +105,7 @@ export function mountAttentionUI(root: HTMLElement, bridge: AttentionBridge, opt
     const go = button("Go", () => void perform(async () => {
       navigating = true;
       opened = false;
-      const initial = initialNavigationProgress(item);
+      const initial = initialNavigationProgress();
       go.textContent = navigationProgressButton(initial);
       progress.textContent = navigationProgressText(initial);
       try {
@@ -140,61 +132,37 @@ export function mountAttentionUI(root: HTMLElement, bridge: AttentionBridge, opt
     const snoozeAction = button("Snooze", () => void perform(() => bridge.setAttentionState(item.source, item.id, "snoozed", Number(snooze.value))));
     const done = button("Done", () => void perform(() => bridge.setAttentionState(item.source, item.id, "done")));
     const reopen = button("Reopen", () => void perform(() => bridge.setAttentionState(item.source, item.id, "pending")));
-    const discover = button("Refresh windows", () => void perform(async () => {
-      choices = await bridge.listWindows();
-      if (disposed) return;
-      windows.replaceChildren();
-      const placeholder = element("option", choices.length ? "Choose a window…" : "No available windows");
-      placeholder.value = "";
-      windows.appendChild(placeholder);
-      choices.forEach((choice, index) => {
-        const option = element("option", choice.title || `Window ${choice.hwnd} (PID ${choice.pid})`);
-        option.value = String(index);
-        windows.appendChild(option);
-      });
-    }));
-    const saveWindow = button("Save window", () => void perform(async () => {
-      const selected = windows.value === "" ? undefined : choices[Number(windows.value)];
-      if (!selected) throw new Error("Refresh windows and choose a destination first.");
-      await bridge.setAttentionDestination(item.source, item.id, selected);
-      editor.open = false;
-    }));
-    form.addEventListener("submit", event => {
-      event.preventDefault();
-      void perform(async () => {
-        await bridge.setAttentionDestination(item.source, item.id, urlDestination(url.value));
-        editor.open = false;
-      });
-    });
-    form.append(urlLabel, saveURL);
-    editor.append(summary, form, windowLabel, discover, saveWindow);
     actions.append(go, snooze, snoozeAction, done, reopen);
-    node.append(title, metadata, origin, description, destination, progress, failure, actions, editor);
+    const questionRoot = element("section");
+    node.append(title, metadata, origin, description, questionRoot, destination, progress, failure, actions);
+    const question = mountCodexQuestionUI(questionRoot, bridge, item, () => { questionLoaded = true; refresh(); });
     const messageRoot = element("section");
     node.appendChild(messageRoot);
-    const question = mountCodexQuestionUI(messageRoot, bridge, item);
     const message = mountCodexMessageUI(messageRoot, bridge, item);
     const detailRoot = element("section");
     node.appendChild(detailRoot);
     const details = options.mountDetails?.(detailRoot, item);
+    node.appendChild(diagnostics);
 
     function refresh() {
-      title.textContent = item.title;
+      const content = attentionContent(item);
+      title.textContent = content.title;
       metadata.textContent = [item.source, item.project, new Date(item.createdAt).toLocaleString(),
         item.state === "snoozed" && item.snoozedUntil ? `Snoozed until ${new Date(item.snoozedUntil).toLocaleString()}` : ""].filter(Boolean).join(" · ");
-      description.textContent = item.description || "";
-      description.hidden = !item.description;
+      description.textContent = content.description;
+      description.hidden = !content.description || (questionLoaded && Boolean(content.diagnostics));
+      diagnosticText.textContent = content.diagnostics;
+      diagnostics.hidden = !content.diagnostics;
       origin.textContent = item.origin ? `From ${codexOriginLabel(item.origin)}` : "";
       origin.hidden = !item.origin;
       destination.textContent = item.destination
         ? item.destination.kind === "url" ? item.destination.url : item.destination.title || `Window ${item.destination.hwnd}`
-        : item.origin ? "Go focuses the originating VS Code window." : "No destination. Choose a window or link below.";
+        : item.origin ? "Go focuses the originating VS Code window." : "No destination.";
       go.disabled = busy || !canNavigateAttention(item);
       snooze.hidden = snoozeAction.hidden = item.state === "done";
       done.hidden = item.state === "done";
       reopen.hidden = item.state === "pending";
-      [snooze, snoozeAction, done, reopen, discover, saveURL, saveWindow, windows, url].forEach(control => { control.disabled = busy; });
-      if (!editor.open && document.activeElement !== url) url.value = item.destination?.kind === "url" ? item.destination.url : "";
+      [snooze, snoozeAction, done, reopen].forEach(control => { control.disabled = busy; });
     }
     refresh();
     return { node, update(next: AttentionItem) { item = next; refresh(); question.update(item); message.update(item); details?.update(item); }, dispose() { unsubscribeProgress?.(); question.dispose(); message.dispose(); details?.dispose(); } };

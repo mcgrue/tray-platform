@@ -185,6 +185,7 @@ export const applicationReady = singleInstance ? app.whenReady().then(async () =
   ipcMain.handle("attention-answer", async (event, source: string, id: string, answers: unknown) => {
     requireInbox(event);
     const receipt = await codexQuestions.answer(findItem(source, id), answers);
+    if (receipt.remainingQuestions > 0) return receipt;
     try { await attention.setState(source, id, "done"); }
     catch { return { ...receipt, warning: "Answers were sent, but the Tray item could not be marked Done. Use Done when storage is available; do not resend." }; }
     return receipt;

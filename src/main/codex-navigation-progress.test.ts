@@ -16,17 +16,18 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-test("reports the slow rescan immediately and success only after native activation confirms it", async () => {
+test("reports a rescan after the cached process exits and success only after native activation confirms it", async () => {
   const scan = deferred<CodexInstancesSnapshot>();
   const activation = deferred<void>();
   const activating = deferred<void>();
   const progress: NavigationProgress[] = [];
-  const desktop = { listProcesses: jest.fn(), listWindows: jest.fn(async () => [destination]),
+  const desktop = { listProcesses: jest.fn(), areProcessesRunning: jest.fn(async () => false), listWindows: jest.fn(async () => [destination]),
     activate: jest.fn(() => { activating.resolve(); return activation.promise; }) };
-  const inventory = { list: jest.fn(), refresh: jest.fn(() => scan.promise) };
+  const inventory = { list: jest.fn(() => snapshot), refresh: jest.fn(() => scan.promise) };
   const service = new CodexAttention(desktop, inventory);
   // Like the reported Dredmor item, the saved origin has no window title.
   const pending = service.activate({ title: "Dredmor notification test", origin }, update => progress.push(update));
+  await Promise.resolve();
   expect(progress).toEqual([{ phase: "scanning" }]);
   expect(inventory.refresh).toHaveBeenCalledTimes(1);
   expect(desktop.activate).not.toHaveBeenCalled();
@@ -43,9 +44,9 @@ test("reports the slow rescan immediately and success only after native activati
 
 test.each(["scan", "activation"])("%s failure never reports that the window opened", async stage => {
   const progress: NavigationProgress[] = [];
-  const desktop = { listProcesses: jest.fn(), listWindows: jest.fn(async () => [destination]),
+  const desktop = { listProcesses: jest.fn(), areProcessesRunning: jest.fn(async () => stage !== "scan"), listWindows: jest.fn(async () => [destination]),
     activate: jest.fn(async () => { throw new Error("Windows refused"); }) };
-  const inventory = { list: jest.fn(), refresh: jest.fn(async () => stage === "scan"
+  const inventory = { list: jest.fn(() => snapshot), refresh: jest.fn(async () => stage === "scan"
     ? { ...snapshot, error: "Scan failed" } : snapshot) };
   const service = new CodexAttention(desktop, inventory);
   await expect(service.activate({ title: "Question", origin }, update => progress.push(update))).rejects.toThrow();
@@ -55,7 +56,7 @@ test.each(["scan", "activation"])("%s failure never reports that the window open
 
 test("an explicit destination reports opening without claiming a rescan", async () => {
   const progress: NavigationProgress[] = [];
-  const desktop = { listProcesses: jest.fn(), listWindows: jest.fn(), activate: jest.fn(async () => {}) };
+  const desktop = { listProcesses: jest.fn(), areProcessesRunning: jest.fn(), listWindows: jest.fn(), activate: jest.fn(async () => {}) };
   const inventory = { list: jest.fn(), refresh: jest.fn() };
   const service = new CodexAttention(desktop, inventory);
   await service.activate({ title: "Question", origin, destination }, update => progress.push(update));

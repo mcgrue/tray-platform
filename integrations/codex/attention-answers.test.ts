@@ -189,9 +189,10 @@ test("installer upgrades an existing creation hook and copies its answer module 
   const unrelated = [{ hooks: [{ type: "command", command: "keep-existing" }] }];
   fs.writeFileSync(installed.hooksPath, JSON.stringify({ hooks: { PreToolUse: creation, Stop: unrelated } }));
   const upgraded = install({ codexHome: root });
-  expect(upgraded.addedEvents).toEqual(["PostToolUse", "UserPromptSubmit"]);
+  expect(upgraded.addedEvents).toEqual(["PostToolUse", "UserPromptSubmit", "Stop"]);
   const hooks = JSON.parse(fs.readFileSync(installed.hooksPath, "utf8")).hooks;
-  expect(hooks.PreToolUse).toEqual(creation); expect(hooks.Stop).toEqual(unrelated);
+  expect(hooks.PreToolUse).toEqual(creation); expect(hooks.Stop.slice(0, unrelated.length)).toEqual(unrelated);
+  expect(hooks.Stop).toHaveLength(unrelated.length + 1);
   expect(hooks.PostToolUse[0].matcher).toBe("^request_user_input$");
   expect(hooks.UserPromptSubmit[0].matcher).toBeUndefined();
   expect(fs.readFileSync(path.join(root, "tray-platform", "attention-answers.cjs")))

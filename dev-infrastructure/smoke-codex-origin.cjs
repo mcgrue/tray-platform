@@ -26,8 +26,17 @@ async function clickGo(mainWindow) {
   // A JavaScript .click() does not grant Windows foreground permission. Exercise
   // the real mouse-input path, as a user clicking Go does.
   mainWindow.setAlwaysOnTop(true); mainWindow.show();
+  // The synthetic question has no transcript; its asynchronous error changes
+  // layout. Collapse that unrelated panel before measuring native click coordinates.
+  await mainWindow.webContents.executeJavaScript(`(() => {
+    const editor = document.querySelector('[data-codex-question]');
+    if (editor) editor.open = false;
+  })()`);
+  await sleep(250);
   const point = await mainWindow.webContents.executeJavaScript(`(() => {
     const button = [...document.querySelector("main article").querySelectorAll("button")].find(button => button.textContent === "Go");
+    window.__originSmokeGoClicked = false;
+    button.addEventListener("click", () => { window.__originSmokeGoClicked = true; }, { once: true });
     button.scrollIntoView({ block: "center" });
     const rect = button.getBoundingClientRect(); return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
   })()`);
@@ -55,8 +64,10 @@ $previous = New-Object SmokeMouse+Point
 [void][SmokeMouse]::GetCursorPos([ref]$previous)
 [void][SmokeMouse]::ClientToScreen($handle, [ref]$point)
 [void][SmokeMouse]::SetCursorPos($point.X, $point.Y)
+Start-Sleep -Milliseconds 100
 [SmokeMouse]::mouse_event(2, 0, 0, 0, [UIntPtr]::Zero)
 [SmokeMouse]::mouse_event(4, 0, 0, 0, [UIntPtr]::Zero)
+Start-Sleep -Milliseconds 100
 [void][SmokeMouse]::SetCursorPos($previous.X, $previous.Y)
 `;
   await new Promise((resolve, reject) => {
@@ -109,15 +120,20 @@ async function run() {
   const windows = await desktop.listWindows();
   const target = windows.filter(w => w.pid === expected.vscodeMainPid && w.title === expected.title);
   assert.equal(target.length, 1, "Origin must map to exactly one native window");
+  let navigationScans = 0;
+  const refresh = codexInstances.refresh.bind(codexInstances);
+  codexInstances.refresh = () => { navigationScans++; return refresh(); };
   const focusStart = Date.now();
   mainWindow.show(); mainWindow.focus();
   await clickGo(mainWindow);
+  await waitFor("native Go click registered", () => evaluate(() => window.__originSmokeGoClicked === true));
   await waitFor("Go focuses the originating editor", async () => {
-    const failure = await evaluate(() => document.querySelector('main article [role="alert"]').textContent);
+    const failure = await evaluate(() => document.querySelector('main article > [role="alert"]').textContent);
     if (failure) throw new Error(failure);
     return (await desktop.captureForeground())?.hwnd === target[0].hwnd;
   });
   const focusMs = Date.now() - focusStart;
+  assert.equal(navigationScans, 0, "Go must use the live cached mapping without rescanning");
   assert.equal(attention.get(item.source, item.id).state, "pending", "Go must not dismiss the item");
   await new Promise(resolve => { mainWindow.webContents.once("did-finish-load", resolve); mainWindow.reload(); });
   await waitFor("origin survives reload", () => evaluate(() => document.querySelector("main article")?.textContent.includes("Codex PID")));
@@ -136,7 +152,8 @@ async function run() {
     [...panel.querySelectorAll('[role="option"]')].find(option => option.textContent.includes("Stale origin smoke")).click();
     [...panel.querySelectorAll("button")].find(button => button.textContent === "Go").click();
   });
-  await waitFor("stale origin error", () => evaluate(() => document.querySelector('[data-navigation-chooser]').textContent.includes("exited or changed")));
+  await waitFor("stale origin error", () => evaluate(() => document.querySelector('[data-navigation-chooser]').textContent.includes("not in the cached mapping")));
+  assert.equal(navigationScans, 0, "An unmapped origin must not trigger a scan");
   assert.equal(attention.get("codex", "stale-origin").state, "pending");
 
   // Exercise the native last-moment guards without changing the target window.
@@ -148,7 +165,7 @@ async function run() {
   await sleep(250);
   fs.writeFileSync(path.join(dataPath, "codex-origin.png"), (await mainWindow.webContents.capturePage()).toPNG());
   fs.writeFileSync(reportPath, JSON.stringify({ passed: true, dataPath, hookMs, focusMs, origin: item.origin, target: target[0],
-    checks: ["real hook ancestry", "enabled Go", "native foreground HWND", "reload", "chooser stale origin error", "native title and PID guards", "item remains pending"] }, null, 2));
+    checks: ["real hook ancestry", "enabled Go", "cached mapping without rescan", "native foreground HWND", "reload", "chooser stale origin error", "native title and PID guards", "item remains pending"] }, null, 2));
 }
 const watchdog = setTimeout(() => { fs.writeFileSync(reportPath, JSON.stringify({ passed: false, error: "Smoke timed out" })); app.exit(1); }, 150000);
 run().catch(async error => {

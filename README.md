@@ -114,17 +114,17 @@ directory for every path below and run the installer with the same setting.
    ```
 
    This copies the bridge and its answer-correlation module into
-   `~/.codex/tray-platform/` and adds three background hooks to
-   `~/.codex/hooks.json`: `PreToolUse`, `PostToolUse`, and `UserPromptSubmit`. It preserves other
+   `~/.codex/tray-platform/` and adds four background hooks to
+   `~/.codex/hooks.json`: `PreToolUse`, `PostToolUse`, `UserPromptSubmit`, and `Stop`. It preserves other
    hooks and backs up files before replacing them. Re-running it updates the
-   bridge and adds missing answer hooks without duplicating existing hooks. The installer does not modify
+   bridge and adds missing hooks without duplicating existing hooks. The installer does not modify
    `AGENTS.md` or grant hook trust.
 
 2. Open `/hooks` in the Codex CLI using that same profile. Review and trust the
    Tray Platform commands: `PreToolUse` with matcher
    `^request_user_input(_async)?$`, `PostToolUse` with matcher
-   `^request_user_input$`, and `UserPromptSubmit` without a matcher.
-   Confirm all three are enabled and trusted. New or
+   `^request_user_input$`, and `UserPromptSubmit` and `Stop` without matchers.
+   Confirm all four are enabled and trusted. New or
    changed hook definitions require review before they can run.
 
 3. Back up your existing `~/.codex/AGENTS.md`, then append the following section
@@ -147,8 +147,8 @@ directory for every path below and run the installer with the same setting.
 4. Keep tray-platform running on the same machine. After active work finishes,
    run **Developer: Reload Window** in each existing VS Code window, or restart
    the Codex CLI, then resume the conversation. Existing Codex sessions retain
-   their loaded hook configuration: installing the answer hooks on disk does
-   not enable dismissal in those sessions, even on later turns. A newly started
+   their loaded hook configuration: installing new hooks on disk does
+   not enable them in those sessions, even on later turns. A newly started
    session loads the new hooks. Reload after installing and trusting new hook
    definitions; bridge-only script updates do not require this. Confirm a fresh
    session can summarize the global question rule.
@@ -176,10 +176,14 @@ conversation, steers an active turn, or starts a follow-up when idle. Sending a
 free-form message leaves the item pending; use **Done** when resolved. This is
 separate from submitting a structured question answer in Codex.
 
-For async questions, expand **Answer question**, choose a suggested answer or
-type your own for each open question, then click **Send answer(s)** (Ctrl+Enter).
+Async question controls appear above the Go help text. Click a suggested answer
+to submit that question immediately, or type in **Your answer** and click
+**Send answer(s)** (Ctrl+Enter). Typed drafts for other questions are preserved.
 Tray sends the extension's structured question reply so Codex can dismiss the
-matching question dialog, then marks the Tray item Done after acknowledgment.
+matching question dialog. The Tray item becomes Done after all questions have
+acknowledged answers; partial answers leave it pending.
+Titles omit the notification prefix. Project/session/turn/call/tool metadata
+is available in the collapsed **Details** section at the bottom of each card.
 The exact original questions are loaded from the matching local session under
 `CODEX_HOME/sessions` (default `~/.codex/sessions`), including older inbox items.
 Missing transcripts or unverifiable question identities fail visibly. Blocking
@@ -205,20 +209,36 @@ entry. Answering every question in a request automatically moves its entry to
 **Done**, preserving its history, title, and destination. Partial answers keep
 the request pending. You can still mark **Done** manually.
 
+The `Stop` hook also creates **Codex done: <project>** when the agent finishes a
+turn, with its final response, project, session, and originating window. Each
+session/turn gets one pending item and one ICQ sound; retries preserve human
+edits and Done state. Sending a message in the same conversation automatically
+moves its earlier completion entries (including snoozed ones) to **Done**. The
+new turn's result still creates its own pending entry. Viewing/focusing VS Code
+does not acknowledge results; you can also use **Done** manually. Completion does
+not resolve unanswered questions. Tool completion, interruption, session exit,
+and `SubagentStop` do not create completion items. This reports the Codex Stop
+event, not a guarantee that the requested work succeeded; read the final response.
+Ephemeral turns (`transcript_path: null`), including the desktop app's internal
+suggestion jobs, do not create completion items or sounds. Saved conversations
+still notify, including JSON responses. Explicit questions are unaffected.
+
 On Windows, new questions identify their originating Codex and VS Code processes.
-**Go** (including the pending-work chooser and shortcut) refreshes the process
-inventory and focuses that editor window. It does not select a particular Codex
+**Go** (including the pending-work chooser and shortcut) uses the cached process
+mapping after checking the mapped process IDs and start times. It rescans only
+when a mapped process has exited or its PID has been reused. If there is no
+mapping, refresh **Codex Instances** manually. Go focuses that editor window but does not select a particular Codex
 conversation within the window. The card shows the originating window title and
 process IDs. An explicitly chosen window or link overrides automatic navigation.
 Closed/restarted processes, unavailable titles, and ambiguous identical window
-titles require retrying or using **Choose destination**; folder names are never
-used to guess a window. Existing items without origin metadata keep the manual
-destination picker.
+titles require retrying or opening the editor directly; folder names are never
+used to guess a window. Cards no longer include a destination editor. Existing
+saved destinations still work; items without a destination or origin disable Go.
 
-Run `node integrations/codex/install.cjs` after updating the bridge, then quit and
-relaunch Tray Platform after building. The hook definitions are unchanged, so this
-bridge-only update does not require restarting Codex sessions. Origin capture is
-optional: failed discovery still delivers the question. The Windows delivery
+Run `node integrations/codex/install.cjs` after updating the bridge. If it adds
+hooks (including `Stop` when upgrading from question-only notifications), trust
+them and reload Codex as described above. Bridge-only updates need no reload.
+Origin capture is optional: failed discovery still delivers the item. The Windows delivery
 deadline is 3.5 seconds, within the installed background hook's 5-second timeout.
 
 Validation: `yarn test --runInBand`, `yarn pre-build`, then (from a local VS Code
@@ -229,6 +249,25 @@ verifies the foreground HWND, checks stale-origin errors, and retains a report
 and screenshot under the system temporary directory. It briefly focuses the
 originating editor and attempts to restore the previous foreground window.
 
+Completion smoke: with the same `CODEX_CLI` and Electron environment, run
+`node node_modules/electron/cli.js dev-infrastructure/smoke-codex-completion.cjs`.
+It holds a real runtime turn open to check that no completion appears during
+work, then verifies final-response rendering, one item/sound per turn, persistent
+Done state, retry deduplication, and no focus stealing. Evidence and a screenshot
+are retained under the system temporary directory.
+
+Completion filtering smoke: with `CODEX_CLI` set, run
+`node dev-infrastructure/smoke-codex-completion-filter.cjs`. It uses a local
+fixture provider and isolated profile to verify real ephemeral turns stay silent
+while saved conversations with identical JSON output still notify.
+
+Completion dismissal smoke: with `CODEX_CLI` set and `ELECTRON_RUN_AS_NODE`
+unset, run `node node_modules/electron/cli.js dev-infrastructure/smoke-codex-completion-dismissal.cjs`.
+It submits two real runtime turns against a local fixture, verifies the first
+completion leaves Pending when the next message is submitted, and checks that
+the new result, an unanswered question, and another conversation stay pending.
+It retains an inbox screenshot and report under the system temporary directory.
+
 Blocking answers are detected by `PostToolUse`. Async answers are detected by
 `UserPromptSubmit` when the client submits a structured
 `send_user_message_question_reply` envelope, during an active turn or in a later
@@ -238,6 +277,15 @@ input-processing boundary.
 Ordinary chat text is not treated as an answer. Matching uses the session, original
 call, question index, and a hash of the question; unrelated entries stay pending.
 Repeated answer delivery preserves an entry you manually reopened after dismissal.
+
+Completion dismissal also uses `UserPromptSubmit`, matching the exact session
+and only earlier completion IDs. It preserves item history and human edits.
+Its separate `~/.codex/tray-platform/completion-state/` directory contains
+identifiers and hashes, without message text. Keep it across bridge updates:
+it handles prompts racing completion delivery and preserves manually reopened
+items on retries. Existing completion entries can be acknowledged without prior
+correlation metadata. Delivery is best effort while Tray is running; a later
+message or repeated hook can retry failed acknowledgements.
 
 Correlation metadata lives in `~/.codex/tray-platform/question-state/`. It stores
 identifiers and question hashes, without question or answer text. Keep it across
@@ -250,13 +298,13 @@ loopback origin/port. Remote hosts and redirects are not used. Failed delivery
 is logged to hook stderr and exits successfully. There is no background retry
 worker. Answer markers persist, so re-delivering the matching question or answer
 can complete a failed dismissal. Hooks tolerate answers racing question creation.
-Ordinary questions written in chat, turn completions, and permission-approval
+Ordinary questions written in chat and permission-approval
 prompts do not create entries through this bridge. Existing completion sounds
 and permission-approval hooks remain independent.
 
 After updating tray-platform, quit and reopen it to load API changes. Disable
-the three Tray Platform hooks in `/hooks` to stop question notifications and
-automatic dismissal. After bridge-only updates, rerun the installer; no tray
+the four Tray Platform hooks in `/hooks` to stop notifications and
+automatic dismissal, or disable only `Stop` to stop completion items. After bridge-only updates, rerun the installer; no tray
 restart is needed.
 
 Validation: `yarn test --runInBand` and `yarn pre-build`. For the complete

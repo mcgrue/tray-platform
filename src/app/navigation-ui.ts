@@ -83,7 +83,7 @@ export function mountNavigationUI(root: HTMLElement, bridge: NavigationBridge, o
     if (!item || !canNavigateAttention(item)) return;
     busy = true; message.textContent = "";
     navigatingKey = attentionKey(item);
-    const initial = initialNavigationProgress(item);
+      const initial = initialNavigationProgress();
     progressButton = navigationProgressButton(initial);
     progress.textContent = navigationProgressText(initial);
     render();

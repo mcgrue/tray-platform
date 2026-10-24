@@ -17,7 +17,7 @@ test("hook observation is captured through HTTP, persisted, and preserved on dup
       { pid: process.pid, parentPid: 2, name: "node.exe", startedAt },
       { pid: 2, parentPid: 1, name: "codex.exe", startedAt },
       { pid: 1, parentPid: 0, name: "Code.exe", startedAt },
-    ], listWindows: async () => [], activate: async () => {},
+    ], areProcessesRunning: async () => true, listWindows: async () => [], activate: async () => {},
   }, { list: () => ({ instances: [], supported: true, scanning: false }), refresh: async () => ({ instances: [], supported: true, scanning: false }) });
   const api = createAttentionApi({ attention, desktop: { listWindows: async () => [] }, prepareInput: (source, input) => capture.prepareInput(source, input) });
   const server = http.createServer((req, res) => { void api(req, res); });

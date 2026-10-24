@@ -9,7 +9,7 @@ export interface CodexQuestion {
 }
 
 export interface CodexQuestionAnswer { index: number; answer: string; }
-export interface CodexAnswerReceipt extends CodexMessageReceipt { warning?: string; }
+export interface CodexAnswerReceipt extends CodexMessageReceipt { remainingQuestions: number; warning?: string; }
 
 export function hasCodexAsyncQuestion(item: AttentionItem): boolean {
   return item.source === "codex" && Boolean(legacyCodexIdentity(item)) &&

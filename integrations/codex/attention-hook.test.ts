@@ -154,7 +154,11 @@ test("installer preserves existing hooks, creates an exact backup, and is idempo
   const installed = fs.readFileSync(file, "utf8");
   const hooks = JSON.parse(installed);
   expect(hooks.description).toBe("Keep me");
-  expect(hooks.hooks.Stop).toEqual(JSON.parse(original).hooks.Stop);
+  expect(hooks.hooks.Stop.slice(0, 1)).toEqual(JSON.parse(original).hooks.Stop);
+  expect(hooks.hooks.Stop).toHaveLength(2);
+  expect(hooks.hooks.Stop[1]).toEqual({ hooks: [expect.objectContaining({
+    command: first.command, command_windows: first.commandWindows, async: true, timeout: 5,
+  })] });
   expect(fs.readFileSync(first.backups[0], "utf8")).toBe(original);
   expect(hooks.hooks.PreToolUse[0].hooks[0]).toMatchObject({ async: true, timeout: 5 });
   expect(first.commandWindows).toContain("A user''s tools");

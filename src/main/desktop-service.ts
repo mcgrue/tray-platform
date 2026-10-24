@@ -4,10 +4,11 @@ import { Destination, WindowDestination } from "../shared/attention";
 import { ProcessDescriptor } from "../shared/codex-instances";
 
 export interface DesktopRequest {
-  command: "list" | "foreground" | "activate" | "processes";
+  command: "list" | "foreground" | "activate" | "processes" | "check-processes";
   appPid: number;
   destination?: WindowDestination;
   guard?: WindowActivationGuard;
+  processIdentities?: Array<{ pid: number; startedAt: string }>;
 }
 
 export interface WindowActivationGuard {
@@ -63,6 +64,16 @@ export class DesktopService {
     return result;
   }
 
+  async areProcessesRunning(identities: Array<{ pid: number; startedAt: string }>): Promise<boolean> {
+    if (!identities.length || !identities.every(item => Number.isSafeInteger(item.pid) && item.pid > 0 &&
+      typeof item.startedAt === "string" && Number.isFinite(Date.parse(item.startedAt)))) {
+      throw new Error("Invalid process identities.");
+    }
+    const result = await this.request("check-processes", undefined, undefined, identities);
+    if (typeof result !== "boolean") throw new Error("Process check returned invalid data.");
+    return result;
+  }
+
   async captureForeground(): Promise<WindowDestination | undefined> {
     const result = await this.request("foreground");
     if (result === null || result === undefined) return undefined;
@@ -93,11 +104,13 @@ export class DesktopService {
     this.children.clear();
   }
 
-  private async request(command: DesktopRequest["command"], destination?: WindowDestination, guard?: WindowActivationGuard): Promise<unknown> {
+  private async request(command: DesktopRequest["command"], destination?: WindowDestination, guard?: WindowActivationGuard,
+    processIdentities?: DesktopRequest["processIdentities"]): Promise<unknown> {
     if (this.closed) throw new Error("Desktop service is closed.");
     const request: DesktopRequest = { command, appPid: this.appPid };
     if (destination) request.destination = destination;
     if (guard) request.guard = guard;
+    if (processIdentities) request.processIdentities = processIdentities;
     const response = await (this.options.runner ? this.options.runner(request) : this.runHelper(request));
     if (!response || typeof response !== "object" || typeof (response as any).ok !== "boolean") {
       throw new Error("Windows helper returned invalid data.");

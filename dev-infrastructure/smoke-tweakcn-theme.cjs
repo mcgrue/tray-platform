@@ -53,7 +53,7 @@ function installFixture() {
     captureBookmark: async () => emit("capture", {}), saveBookmark: async () => {}, goToBookmark: async () => {},
     getCodexInstances: async () => instances, onCodexInstancesChanged: subscribe("instances"), refreshCodexInstances: async () => instances,
     getAttentionQuestion: async () => [{ index: 0, title: "Ready to continue with the Clean Slate theme?", options: ["Continue", "Review the forms"], answered: false }],
-    answerAttentionQuestion: async () => ({ sessionId: "theme-session", turnId: "theme-turn", delivery: "started" }),
+    answerAttentionQuestion: async () => ({ sessionId: "theme-session", turnId: "theme-turn", delivery: "started", remainingQuestions: 0 }),
     sendAttentionMessage: async () => ({ sessionId: "theme-session", turnId: "theme-turn", delivery: "started" })
   };
   window.showAttentionFixture = () => emit("show");
@@ -141,9 +141,12 @@ async function run() {
   await evaluate(() => document.querySelector("main nav button").focus());
   await sleep(60);
   assert(await evaluate(() => document.activeElement.matches("button") && getComputedStyle(document.activeElement).outlineStyle === "solid"), "Keyboard focus has a visible ring");
-  await evaluate(() => document.querySelector("[data-codex-question]").open = true);
+  assert.equal(await evaluate(() => document.querySelector("[data-codex-question]").open), true, "Questions start expanded");
   await waitFor("question fields", () => !!document.querySelector("textarea[data-question-index]"));
-  await evaluate(() => document.querySelector("[data-codex-question] fieldset button").click());
+  await evaluate(() => {
+    const input = document.querySelector("textarea[data-question-index]");
+    input.value = "Continue"; input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
   assert.equal(await evaluate(() => document.querySelector("textarea[data-question-index]").value), "Continue");
   assert.equal(await evaluate(() => document.querySelector("[data-submit-answer]").disabled), false);
   await tab("codex-instances");

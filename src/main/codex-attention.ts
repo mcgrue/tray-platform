@@ -28,7 +28,7 @@ export function originFromProcess(processes: ProcessDescriptor[], pid: number, o
 }
 
 export class CodexAttention {
-  constructor(private readonly desktop: Pick<DesktopService, "listProcesses" | "listWindows" | "activate">,
+  constructor(private readonly desktop: Pick<DesktopService, "listProcesses" | "listWindows" | "activate" | "areProcessesRunning">,
     private readonly inventory: { list(): CodexInstancesSnapshot; refresh(): Promise<CodexInstancesSnapshot> }) {}
 
   async prepareInput(source: string, input: any): Promise<AttentionInput> {
@@ -62,25 +62,32 @@ export class CodexAttention {
     }
     if (!item.origin) throw new Error("Choose a destination in the inbox first.");
     const origin = item.origin;
-    // Refresh on every Go: a five-minute-old title could belong to another window.
-    progress({ phase: "scanning" });
-    const snapshot = await this.inventory.refresh();
-    if (!snapshot.supported || snapshot.error) throw new Error("Cannot refresh VS Code windows. Try again or choose a destination manually.");
-    const instance = snapshot.instances.find(entry => entry.codexPid === origin.codexPid &&
+    const findInstance = (snapshot: CodexInstancesSnapshot) => snapshot.instances.find(entry => entry.codexPid === origin.codexPid &&
       sameStart(entry.codexStartedAt, origin.codexStartedAt) && entry.vscodePid === origin.vscodePid &&
       sameStart(entry.vscodeStartedAt, origin.vscodeStartedAt));
-    if (!instance) throw new Error("The originating Codex or VS Code process has exited or changed. Choose a destination manually.");
-    if (!instance.title) throw new Error("The originating VS Code window title is unavailable. Try again or choose a destination manually.");
+    const cached = this.inventory.list();
+    if (!cached.supported) throw new Error("VS Code window discovery is unavailable.");
+    let instance = findInstance(cached);
+    if (!instance) throw new Error("The originating process is not in the cached mapping. Refresh Codex Instances and try Go again.");
+    const identities = [{ pid: origin.codexPid, startedAt: origin.codexStartedAt },
+      { pid: origin.vscodePid, startedAt: origin.vscodeStartedAt }];
+    // A targeted identity check avoids the expensive VS Code inventory scan.
+    // A reused PID means the original mapped process no longer exists.
+    if (!await this.desktop.areProcessesRunning(identities)) {
+      progress({ phase: "scanning" });
+      const refreshed = await this.inventory.refresh();
+      if (!refreshed.supported || refreshed.error) throw new Error("Cannot refresh VS Code windows. Try again or choose a destination manually.");
+      instance = findInstance(refreshed);
+      if (!instance) throw new Error("The originating Codex or VS Code process has exited or changed. Choose a destination manually.");
+    }
+    if (!instance.title) throw new Error("The originating VS Code window title is unavailable. Refresh Codex Instances and try Go again.");
     const windows: WindowDestination[] = (await this.desktop.listWindows()).filter(window =>
       window.pid === instance.vscodeMainPid && window.title === instance.title);
     if (windows.length !== 1) throw new Error(windows.length
       ? "Several VS Code windows have this title. Choose the destination manually."
-      : "The originating VS Code window has closed or changed title. Try Go again.");
+      : "The originating VS Code window has closed or changed title. Refresh Codex Instances and try Go again.");
     progress({ phase: "activating", destination: instance.title });
-    await this.desktop.activate(windows[0], { title: instance.title, processes: [
-      { pid: origin.codexPid, startedAt: origin.codexStartedAt },
-      { pid: origin.vscodePid, startedAt: origin.vscodeStartedAt },
-    ] });
+    await this.desktop.activate(windows[0], { title: instance.title, processes: identities });
     progress({ phase: "opened", destination: instance.title });
   }
 }

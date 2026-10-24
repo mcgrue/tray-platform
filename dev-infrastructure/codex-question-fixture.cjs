@@ -97,7 +97,7 @@ async function runQuestion({ cli, endpoint, asynchronous = false, answerDuringTu
     send({ method: "initialized", params: {} });
     const discovered = await rpc("hooks/list", { cwds: [cwd] });
     const hooks = discovered.data.flatMap(entry => entry.hooks);
-    assert.equal(hooks.length, 3);
+    assert.equal(hooks.length, 4);
     for (const hook of hooks) {
       assert.equal(hook.command, process.platform === "win32" ? installed.commandWindows : installed.command);
       assert.equal(path.resolve(hook.sourcePath), path.resolve(installed.hooksPath));

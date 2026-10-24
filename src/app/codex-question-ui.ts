@@ -1,6 +1,7 @@
 import { AttentionBridge, AttentionItem } from "../shared/attention";
 import { MAX_CODEX_MESSAGE_LENGTH } from "../shared/codex-message";
 import { CodexQuestion, CodexQuestionAnswer, hasCodexAsyncQuestion } from "../shared/codex-question";
+import { renderAttentionMarkdown } from "./attention-markdown";
 
 export function mountCodexQuestionUI(root: HTMLElement, bridge: AttentionBridge, initial: AttentionItem, onLoaded?: () => void) {
   let item = initial, disposed = false, loading = false, loaded = false, sending = false;
@@ -48,8 +49,12 @@ export function mountCodexQuestionUI(root: HTMLElement, bridge: AttentionBridge,
     for (const question of questions) {
       const group = document.createElement("fieldset");
       const legend = document.createElement("legend");
-      legend.textContent = question.title;
-      group.appendChild(legend);
+      legend.textContent = `Question ${question.index + 1}`;
+      const prompt = document.createElement("div");
+      prompt.className = "attention-markdown";
+      prompt.dataset.codexQuestionPrompt = "";
+      prompt.innerHTML = renderAttentionMarkdown(question.title);
+      group.append(legend, prompt);
       if (question.answered) {
         const answered = document.createElement("p"); answered.textContent = "Answered in Codex."; group.appendChild(answered);
       } else {

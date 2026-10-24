@@ -331,6 +331,13 @@ instructions. The desktop must be awake with Tray Platform and the relevant
 Codex conversation running. Windows navigation is hidden; URL links open on the
 phone. Firefox and Chrome on Android are supported push clients.
 
+Item descriptions render Markdown on both desktop and phone: headings, lists,
+emphasis, quotes, tables, links, and code blocks. Plain-text line breaks are
+preserved. Raw HTML is displayed as text; images display their alt text without
+loading remote resources. Only absolute HTTP(S) links are active, and desktop
+links open in the system browser. Reload the phone page after updating; restart
+the desktop app to load its updated renderer and link handler.
+
 Build with `yarn pre-build`. Configure the dedicated web listener using the
 current Tailscale device's user and HTTPS name:
 
@@ -388,6 +395,10 @@ Validation: `yarn test --runInBand`, `yarn pre-build`, then (with
 dev-infrastructure/smoke-attention-web.cjs`. The smoke uses an isolated HTTP proxy,
 fixture Codex operations, and a real Chromium browser with no Electron preload.
 Real Android lock-screen push requires a subscribed phone and manual acceptance.
+
+`yarn electron dev-infrastructure/smoke-attention-markdown.cjs` checks Markdown
+in isolated desktop and phone renderers, including narrow layout, inert HTML,
+external links, snapshot updates, and draft preservation.
 
 References: [Tailscale Serve](https://tailscale.com/docs/features/tailscale-serve),
 [Web Push](https://web.dev/articles/push-notifications-overview), and

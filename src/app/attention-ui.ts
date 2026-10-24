@@ -3,6 +3,7 @@ import { initialNavigationProgress, navigationProgressButton, navigationProgress
 import { mountCodexMessageUI } from "./codex-message-ui";
 import { mountCodexQuestionUI } from "./codex-question-ui";
 import { attentionContent } from "./attention-content";
+import { renderAttentionMarkdown } from "./attention-markdown";
 
 export function visibleAttentionItems(items: AttentionItem[], state: AttentionState): AttentionItem[] {
   return items.filter(item => item.state === state).sort((a, b) =>
@@ -80,8 +81,9 @@ export function mountAttentionUI(root: HTMLElement, bridge: AttentionBridge, opt
     metadata.dataset.muted = "";
     const origin = element("p");
     origin.dataset.muted = "";
-    const description = element("p");
-    description.style.whiteSpace = "pre-wrap";
+    const description = element("div");
+    description.className = "attention-markdown";
+    let renderedDescription: string | undefined;
     const destination = element("p");
     destination.dataset.muted = "";
     const actions = element("div");
@@ -157,7 +159,10 @@ export function mountAttentionUI(root: HTMLElement, bridge: AttentionBridge, opt
       title.textContent = content.title;
       metadata.textContent = [item.source, item.project, new Date(item.createdAt).toLocaleString(),
         item.state === "snoozed" && item.snoozedUntil ? `Snoozed until ${new Date(item.snoozedUntil).toLocaleString()}` : ""].filter(Boolean).join(" · ");
-      description.textContent = content.description;
+      if (renderedDescription !== content.description) {
+        description.innerHTML = renderAttentionMarkdown(content.description);
+        renderedDescription = content.description;
+      }
       description.hidden = !content.description || (questionLoaded && Boolean(content.diagnostics));
       diagnosticText.textContent = content.diagnostics;
       diagnostics.hidden = !content.diagnostics;

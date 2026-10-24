@@ -22,6 +22,7 @@ import { createCodexInstancesApi } from "./codex-instances-api";
 import { CodexAttention } from "./codex-attention";
 import { CodexMessageService } from "./codex-message-service";
 import { CodexQuestionService } from "./codex-question-service";
+import { externalLinkHandler } from "./external-links";
 import { attentionOperations } from "./attention-operations";
 import { startAttentionWeb } from "./attention-web";
 
@@ -52,6 +53,8 @@ export const applicationReady = singleInstance ? app.whenReady().then(async () =
       preload: path.join(__dirname, "preload_js.js"),
     },
   });
+  mainWindow.webContents.setWindowOpenHandler(externalLinkHandler(url => shell.openExternal(url)));
+  mainWindow.webContents.on("will-navigate", event => event.preventDefault());
   const titlebar = new TitlebarController(mainWindow, titlebarSettings, process.platform);
   setWindow(mainWindow);
   const sendAudio = (channel: string, value: string) => {

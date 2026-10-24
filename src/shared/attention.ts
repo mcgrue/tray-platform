@@ -66,6 +66,7 @@ export interface AttentionNavigationProgress extends NavigationProgress {
 }
 
 export interface AttentionBridge {
+  onRecoveredDelivery?(callback: (delivery: { source: string; id: string; action: "messages" | "answers" }) => void): () => void;
   getAttention(): Promise<AttentionSnapshot>;
   setAttentionState(source: string, id: string, state: AttentionState, minutes?: number): Promise<void>;
   goToAttention(source: string, id: string): Promise<void>;

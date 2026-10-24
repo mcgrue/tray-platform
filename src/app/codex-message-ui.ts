@@ -2,8 +2,9 @@ import { AttentionBridge, AttentionItem } from "../shared/attention";
 import { attentionCodexSession, MAX_CODEX_MESSAGE_LENGTH } from "../shared/codex-message";
 
 /** Kept mounted across inbox snapshots so incoming notifications cannot erase a draft. */
-export function mountCodexMessageUI(root: HTMLElement, bridge: AttentionBridge, initial: AttentionItem) {
+export function mountCodexMessageUI(root: HTMLElement, bridge: AttentionBridge, initial: AttentionItem, options: { phone?: boolean } = {}) {
   let item = initial, sending = false, disposed = false;
+  let attemptedMessage: string | undefined;
   const completion = item.source === "codex" && /^completion-[a-f0-9]{64}$/.test(item.id);
   const disclosure = completion ? undefined : document.createElement("details");
   const editor = disclosure || document.createElement("section");
@@ -23,7 +24,7 @@ export function mountCodexMessageUI(root: HTMLElement, bridge: AttentionBridge, 
   input.placeholder = completion ? "Tell Codex what to do next…" : "Type a message…";
   label.appendChild(input);
   const hint = document.createElement("p");
-  hint.textContent = completion ? "Ctrl+Enter to send to this conversation." : "Ctrl+Enter to send. Use Done when this item is resolved.";
+  hint.textContent = options.phone ? "Send to this Codex conversation." : completion ? "Ctrl+Enter to send to this conversation." : "Ctrl+Enter to send. Use Done when this item is resolved.";
   const send = document.createElement("button");
   send.type = "submit";
   const status = document.createElement("p");
@@ -45,6 +46,7 @@ export function mountCodexMessageUI(root: HTMLElement, bridge: AttentionBridge, 
   async function submit() {
     if (disposed || sending || send.disabled || !bridge.sendAttentionMessage) return;
     const message = input.value;
+    attemptedMessage = message;
     sending = true;
     error.textContent = "";
     status.textContent = "Sending to Codex…";
@@ -73,6 +75,11 @@ export function mountCodexMessageUI(root: HTMLElement, bridge: AttentionBridge, 
   });
   form.addEventListener("submit", event => { event.preventDefault(); void submit(); });
   disclosure?.addEventListener("toggle", () => { if (disclosure.open && !sending) input.focus(); });
+  const recovered = bridge.onRecoveredDelivery?.(delivery => {
+    if (delivery.source !== item.source || delivery.id !== item.id || delivery.action !== "messages") return;
+    if (input.value === attemptedMessage) input.value = "";
+    error.textContent = ""; status.textContent = "Delivery confirmed."; refresh();
+  });
   refresh();
-  return { update(next: AttentionItem) { item = next; refresh(); }, dispose() { disposed = true; } };
+  return { update(next: AttentionItem) { item = next; refresh(); }, dispose() { disposed = true; recovered?.(); } };
 }

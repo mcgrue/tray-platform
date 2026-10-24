@@ -40,6 +40,9 @@ function errorText(error: unknown): string {
 /** Mounts only its supplied root. Audio and other application panels remain untouched. */
 export interface AttentionUIOptions {
   mountDetails?: (root: HTMLElement, item: AttentionItem) => { update(item: AttentionItem): void; dispose(): void };
+  navigation?: "phone";
+  requestedItem?: () => { source: string; id: string } | undefined;
+  requestRevision?: () => number;
 }
 
 export function mountAttentionUI(root: HTMLElement, bridge: AttentionBridge, options: AttentionUIOptions = {}): () => void {
@@ -58,6 +61,7 @@ export function mountAttentionUI(root: HTMLElement, bridge: AttentionBridge, opt
   const empty = element("p");
   const cards = new Map<string, { node: HTMLElement; update(item: AttentionItem): void; dispose(): void }>();
   const tabButtons = new Map<AttentionState, HTMLButtonElement>();
+  let revealedKey = "";
   (["pending", "snoozed", "done"] as AttentionState[]).forEach(state => {
     const tab = button(state[0].toUpperCase() + state.slice(1), () => { active = state; render(); });
     tabButtons.set(state, tab);
@@ -69,6 +73,7 @@ export function mountAttentionUI(root: HTMLElement, bridge: AttentionBridge, opt
   function card(initial: AttentionItem) {
     let item = initial;
     const node = element("article");
+    node.dataset.attentionKey = attentionKey(item);
 
     const title = element("h3");
     const metadata = element("p");
@@ -115,6 +120,9 @@ export function mountAttentionUI(root: HTMLElement, bridge: AttentionBridge, opt
       catch (reason) { progress.textContent = ""; throw reason; }
       finally { navigating = false; go.textContent = "Go"; }
     }));
+    const phoneLink = element("a", "Open link");
+    phoneLink.target = "_blank"; phoneLink.rel = "noopener noreferrer";
+    phoneLink.hidden = true;
     const unsubscribeProgress = bridge.onAttentionNavigationProgress?.(update => {
       if (disposed || !navigating || update.source !== item.source || update.id !== item.id) return;
       opened = update.phase === "opened";
@@ -132,13 +140,13 @@ export function mountAttentionUI(root: HTMLElement, bridge: AttentionBridge, opt
     const snoozeAction = button("Snooze", () => void perform(() => bridge.setAttentionState(item.source, item.id, "snoozed", Number(snooze.value))));
     const done = button("Done", () => void perform(() => bridge.setAttentionState(item.source, item.id, "done")));
     const reopen = button("Reopen", () => void perform(() => bridge.setAttentionState(item.source, item.id, "pending")));
-    actions.append(go, snooze, snoozeAction, done, reopen);
+    actions.append(go, phoneLink, snooze, snoozeAction, done, reopen);
     const questionRoot = element("section");
     node.append(title, metadata, origin, description, questionRoot, destination, progress, failure, actions);
     const question = mountCodexQuestionUI(questionRoot, bridge, item, () => { questionLoaded = true; refresh(); });
     const messageRoot = element("section");
     node.appendChild(messageRoot);
-    const message = mountCodexMessageUI(messageRoot, bridge, item);
+    const message = mountCodexMessageUI(messageRoot, bridge, item, { phone: options.navigation === "phone" });
     const detailRoot = element("section");
     node.appendChild(detailRoot);
     const details = options.mountDetails?.(detailRoot, item);
@@ -159,6 +167,11 @@ export function mountAttentionUI(root: HTMLElement, bridge: AttentionBridge, opt
         ? item.destination.kind === "url" ? item.destination.url : item.destination.title || `Window ${item.destination.hwnd}`
         : item.origin ? "Go focuses the originating VS Code window." : "No destination.";
       go.disabled = busy || !canNavigateAttention(item);
+      if (options.navigation === "phone") {
+        go.hidden = true; origin.hidden = true; destination.hidden = true;
+        phoneLink.hidden = item.destination?.kind !== "url";
+        if (item.destination?.kind === "url") phoneLink.href = urlDestination(item.destination.url).url;
+      }
       snooze.hidden = snoozeAction.hidden = item.state === "done";
       done.hidden = item.state === "done";
       reopen.hidden = item.state === "pending";
@@ -170,6 +183,12 @@ export function mountAttentionUI(root: HTMLElement, bridge: AttentionBridge, opt
 
   function render() {
     if (disposed) return;
+    const requested = options.requestedItem?.();
+    const targetKey = requested ? attentionKey(requested) : "";
+    const revealToken = `${targetKey}:${options.requestRevision?.() || 0}`;
+    const target = requested && snapshot.items.find(item => attentionKey(item) === targetKey);
+    const reveal = Boolean(target && revealToken !== revealedKey);
+    if (reveal && target) { active = target.state; revealedKey = revealToken; }
     const pending = snapshot.items.filter(item => item.state === "pending").length;
     heading.textContent = `Attention inbox (${pending} pending)`;
     status.textContent = "";
@@ -193,6 +212,7 @@ export function mountAttentionUI(root: HTMLElement, bridge: AttentionBridge, opt
       const position = list.children[index];
       if (position !== entry.node) list.insertBefore(entry.node, position || null);
     });
+    if (reveal) cards.get(targetKey)?.node.scrollIntoView({ block: "start" });
   }
 
   const unsubscribe = bridge.onAttentionChanged(next => { revision++; snapshot = next; render(); });

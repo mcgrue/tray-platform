@@ -116,7 +116,11 @@ export function mountCodexQuestionUI(root: HTMLElement, bridge: AttentionBridge,
   form.addEventListener("submit", event => { event.preventDefault(); void submit(); });
   retry.addEventListener("click", () => { void load(true); });
   editor.addEventListener("toggle", () => { if (editor.open) void load(); });
+  const recovered = bridge.onRecoveredDelivery?.(delivery => {
+    if (delivery.source !== item.source || delivery.id !== item.id || delivery.action !== "answers") return;
+    error.textContent = ""; void load(true);
+  });
   refresh();
   if (!editor.hidden && editor.open) void load();
-  return { update(next: AttentionItem) { item = next; refresh(); }, dispose() { disposed = true; } };
+  return { update(next: AttentionItem) { item = next; refresh(); }, dispose() { disposed = true; recovered?.(); } };
 }

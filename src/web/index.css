@@ -1,0 +1,31 @@
+@import "../app/app.css";
+html { scroll-padding-top: 16px; }
+body { padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)); max-width: 760px; }
+.web-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 24px; }
+.web-header > span { font-size: 12px; letter-spacing: .15em; color: var(--muted-foreground); font-weight: 600; }
+.header-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.header-actions button { margin: 0; }
+.connection-indicator { display: inline-block; flex-shrink: 0; width: 12px; height: 12px; border-radius: 50%; background: #f87171; box-shadow: 0 0 0 3px #f8717120; }
+.connection-indicator[data-connected="true"] { background: #4ade80; box-shadow: 0 0 0 3px #4ade8020; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+.web-menu { position: relative; }
+#menu-toggle { display: grid; place-items: center; width: 44px; padding: 8px; }
+#menu-toggle svg { fill: currentColor; }
+#header-menu { display: grid; position: absolute; right: 0; top: calc(100% + 8px); z-index: 20; width: max-content; max-width: calc(100vw - 32px); padding: 4px; background: var(--popover); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-lg); }
+#header-menu button { width: 100%; text-align: left; background: transparent; border: 0; box-shadow: none; }
+#header-menu button:hover { background: var(--accent); }
+button, input, select, textarea, summary { min-height: 44px; }
+label > input, label > select, label > textarea { font-size: 16px; }
+#online-controls, #notification-controls { padding: 0; margin: 0; border: 0; min-width: 0; }
+#online-controls:disabled main { opacity: .65; }
+#notifications-dialog { width: min(440px, calc(100% - 32px)); padding: 20px; border: 1px solid var(--border); border-radius: calc(var(--radius) + 4px); color: var(--foreground); background: var(--card); box-shadow: var(--shadow-lg); }
+#notifications-dialog::backdrop { background: #0009; }
+.notifications-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.notifications-header h2 { margin: 0; }
+.notifications-header button { margin: 0; }
+#delivery { padding: 12px; margin-bottom: 16px; border: 1px solid var(--destructive); border-radius: var(--radius); }
+article { scroll-margin-top: 12px; }
+[data-card-actions] > a { padding: 10px; color: var(--primary); }
+nav[aria-label="Attention views"] { display: flex; flex-wrap: wrap; }
+nav[aria-label="Attention views"] button { flex: 1; white-space: nowrap; }
+@media (max-width: 360px) { .web-header { gap: 8px; } .web-header > span { font-size: 11px; letter-spacing: .08em; } }

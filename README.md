@@ -324,6 +324,77 @@ Validation: `yarn test --runInBand`, `yarn pre-build`, then
 acceptance. Clear `ELECTRON_RUN_AS_NODE` if it is set. Smoke data stays in a
 separate temporary user-data directory; the live inbox is not used.
 
+## Android attention PWA over Tailscale
+
+The phone pane supports Pending/Snoozed/Done, question answers, and Codex
+instructions. The desktop must be awake with Tray Platform and the relevant
+Codex conversation running. Windows navigation is hidden; URL links open on the
+phone. Firefox and Chrome on Android are supported push clients.
+
+Build with `yarn pre-build`. Configure the dedicated web listener using the
+current Tailscale device's user and HTTPS name:
+
+```powershell
+node dev-infrastructure/configure-attention-web.cjs --discover
+```
+
+This creates `web-config.json` in `%APPDATA%/electron-from-scratch`, with an
+explicit allowed Tailscale login, HTTPS origin, and loopback port 22223. Pass
+`--user-data`, `--origin`, `--user`, or `--port` to override these values. An
+existing different configuration is preserved unless `--replace` is supplied;
+replacement keeps a backup. Set `enabled` to `false` and restart to disable it.
+
+Quit/reopen Tray Platform, inspect `tailscale serve status`, then configure the
+private HTTPS proxy (enable tailnet HTTPS certificates if prompted):
+
+```powershell
+tailscale serve --bg --https=443 http://127.0.0.1:22223
+```
+
+Tailnet access policy must allow your phone to reach the desktop on TCP 443.
+Use Serve's tailnet sharing, not public Funnel. Never proxy the existing hook
+port 22222: its API trusts loopback callers. The new web listener binds only to
+127.0.0.1 and requires Serve's allowed-user identity header, exact external host,
+and same-origin CSRF-protected writes. Other local processes remain trusted.
+
+Open the Serve URL in Firefox or Chrome on the phone while connected to Tailscale.
+In Firefox, use the three-dot menu → **Install** / **Add to Home screen**. Then
+choose **⋮ → Phone notifications → Enable
+notifications** and **Send test notification**. Push uses encrypted outbound
+requests to Mozilla's push service or Chrome's FCM service; no public inbound app
+endpoint is needed. Firefox Android also uses Google's messaging infrastructure
+for device delivery. Use a normal browsing window and allow notifications in
+both the browser's site settings and Android's application settings.
+Notifications contain the project and item title. Opening one requires Tailscale.
+Android/browser notification permissions and battery settings affect delivery.
+
+`web-push.json` stores the stable private VAPID key and device subscriptions;
+keep this file private and preserve it across updates. New pending items and
+snooze expiry trigger pushes. Startup does not replay the existing backlog.
+Pushes expire after five minutes, retry transient failures up to three attempts,
+and expired subscriptions are retired. No background delivery is possible while
+the desktop app is stopped. Use **Disable on this phone** to unsubscribe.
+
+The app caches only its offline screen, styles, and icons. It does not cache
+questions or queue instructions for later. Live snapshots preserve drafts.
+Unknown sends remain locked to their request ID across reconnect/reload. **Check
+delivery** reconciles the desktop's durable receipt; only use **I checked Codex;
+allow another send** after inspecting the conversation. Confirmed receipts remain
+for seven days; old request IDs cannot be admitted again. Service worker updates
+wait for existing windows to close, preserving active drafts.
+
+Validation: `yarn test --runInBand`, `yarn pre-build`, then (with
+`ELECTRON_RUN_AS_NODE` cleared) `yarn electron
+dev-infrastructure/smoke-attention-web.cjs`. The smoke uses an isolated HTTP proxy,
+fixture Codex operations, and a real Chromium browser with no Electron preload.
+Real Android lock-screen push requires a subscribed phone and manual acceptance.
+
+References: [Tailscale Serve](https://tailscale.com/docs/features/tailscale-serve),
+[Web Push](https://web.dev/articles/push-notifications-overview), and
+[web-push library](https://github.com/web-push-libs/web-push).
+Firefox guidance: [install a web app](https://support.mozilla.org/en-US/kb/use-web-apps-firefox-android)
+and [Web Push notifications](https://support.mozilla.org/en-US/kb/push-notifications-firefox).
+
 ## Take me there
 
 Press `Ctrl+Alt+Space`, or choose **Take me there** in the tray menu. One pending

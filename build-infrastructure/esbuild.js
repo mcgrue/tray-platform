@@ -1,5 +1,8 @@
 const esbuild = require("esbuild");
 const pluginCopy = require("esbuild-plugin-copy");
+const fs = require("fs");
+const path = require("path");
+const { createHash } = require("crypto");
 
 // Parse command line arguments
 const watch = process.argv.includes("--watch");
@@ -21,6 +24,24 @@ const commonConfig = {
     : false,
   metafile: true,
 };
+
+// Keep the browser bundle independent of Electron's renderer and preload.
+esbuild.build({
+  ...commonConfig, platform: "browser", entryPoints: ["src/web/renderer.ts"], outfile: "dist/web/index.js", sourcemap: false,
+  plugins: [{ name: "web-shell", setup(build) {
+    build.onEnd(result => {
+      if (result.errors.length) return;
+      fs.mkdirSync("dist/web", { recursive: true });
+      for (const name of ["index.html", "offline.html", "manifest.webmanifest", "icon-192.png", "icon-512.png"]) {
+        fs.copyFileSync(path.join("src/web", name), path.join("dist/web", name));
+      }
+      const hash = createHash("sha256");
+      for (const name of ["index.js", "index.css", "offline.html", "icon-192.png", "icon-512.png"]) hash.update(fs.readFileSync(path.join("dist/web", name)));
+      const worker = fs.readFileSync("src/web/sw.js", "utf8"); hash.update(worker);
+      fs.writeFileSync("dist/web/sw.js", worker.replace(/CACHE_VERSION/g, hash.digest("hex").slice(0, 16)));
+    });
+  } }],
+}).catch(() => process.exit(3));
 
 (async () => {
   /// server translation

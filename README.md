@@ -170,11 +170,15 @@ and [hook configuration and trust](https://learn.chatgpt.com/docs/hooks) documen
 
 ### Behavior and maintenance
 
-On Windows, expand **Message Codex** on a Codex attention item, type a message,
-and click **Send message** or press **Ctrl+Enter**. It targets that item's
-conversation, steers an active turn, or starts a follow-up when idle. Sending a
-free-form message leaves the item pending; use **Done** when resolved. This is
-separate from submitting a structured question answer in Codex.
+On Windows, **Codex done** completion notices show a **New instruction** field
+directly on the card, including in the Done tab. Type the next instruction and
+click **Send instruction** or press **Ctrl+Enter**. Other Codex attention items
+offer the same delivery through **Message Codex** and **Send message**. It targets
+that item's conversation, steers an active turn, or starts a follow-up when idle.
+The completion dismissal hook acknowledges earlier completion notices when Codex
+receives the new instruction. Free-form messages leave question items pending;
+use **Done** when resolved. This is separate from submitting a structured
+question answer in Codex.
 
 Async question controls appear above the Go help text. Click a suggested answer
 to submit that question immediately, or type in **Your answer** and click

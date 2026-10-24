@@ -4,21 +4,26 @@ import { attentionCodexSession, MAX_CODEX_MESSAGE_LENGTH } from "../shared/codex
 /** Kept mounted across inbox snapshots so incoming notifications cannot erase a draft. */
 export function mountCodexMessageUI(root: HTMLElement, bridge: AttentionBridge, initial: AttentionItem) {
   let item = initial, sending = false, disposed = false;
-  const editor = document.createElement("details");
+  const completion = item.source === "codex" && /^completion-[a-f0-9]{64}$/.test(item.id);
+  const disclosure = completion ? undefined : document.createElement("details");
+  const editor = disclosure || document.createElement("section");
   editor.dataset.codexMessage = "";
-  const summary = document.createElement("summary");
-  summary.textContent = "Message Codex";
+  if (disclosure) {
+    const summary = document.createElement("summary");
+    summary.textContent = "Message Codex";
+    disclosure.appendChild(summary);
+  }
   const form = document.createElement("form");
   const label = document.createElement("label");
-  label.textContent = "Message to this Codex conversation";
+  label.textContent = completion ? "New instruction" : "Message to this Codex conversation";
   label.style.display = "block";
   const input = document.createElement("textarea");
   input.rows = 3;
   input.maxLength = MAX_CODEX_MESSAGE_LENGTH;
-  input.placeholder = "Type a message…";
+  input.placeholder = completion ? "Tell Codex what to do next…" : "Type a message…";
   label.appendChild(input);
   const hint = document.createElement("p");
-  hint.textContent = "Ctrl+Enter to send. Use Done when this item is resolved.";
+  hint.textContent = completion ? "Ctrl+Enter to send to this conversation." : "Ctrl+Enter to send. Use Done when this item is resolved.";
   const send = document.createElement("button");
   send.type = "submit";
   const status = document.createElement("p");
@@ -26,7 +31,7 @@ export function mountCodexMessageUI(root: HTMLElement, bridge: AttentionBridge, 
   const error = document.createElement("p");
   error.setAttribute("role", "alert");
   form.append(label, hint, send, status, error);
-  editor.append(summary, form);
+  editor.appendChild(form);
   root.appendChild(editor);
 
   function refresh() {
@@ -34,7 +39,7 @@ export function mountCodexMessageUI(root: HTMLElement, bridge: AttentionBridge, 
     const session = attentionCodexSession(item);
     input.disabled = sending || !session;
     send.disabled = sending || !session || !input.value.trim();
-    send.textContent = sending ? "Sending…" : "Send message";
+    send.textContent = sending ? "Sending…" : completion ? "Send instruction" : "Send message";
     if (!session) error.textContent = "This item has no Codex session. Use Go to open its conversation.";
   }
   async function submit() {
@@ -67,7 +72,7 @@ export function mountCodexMessageUI(root: HTMLElement, bridge: AttentionBridge, 
     }
   });
   form.addEventListener("submit", event => { event.preventDefault(); void submit(); });
-  editor.addEventListener("toggle", () => { if (editor.open && !sending) input.focus(); });
+  disclosure?.addEventListener("toggle", () => { if (disclosure.open && !sending) input.focus(); });
   refresh();
   return { update(next: AttentionItem) { item = next; refresh(); }, dispose() { disposed = true; } };
 }

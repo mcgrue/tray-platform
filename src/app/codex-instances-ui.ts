@@ -1,4 +1,5 @@
 import { CodexInstance, CodexInstancesBridge, CodexInstancesSnapshot } from "../shared/codex-instances";
+import { codexActivityIcon, codexActivityLegend } from "./codex-activity-icon";
 
 export type CodexSortColumn = "title" | "workspace" | "vscodePid" | "codexPid" | "lastFileUpdatedAt";
 export type CodexSortDirection = "ascending" | "descending";
@@ -65,7 +66,7 @@ export function mountCodexInstancesUI(root: HTMLElement, bridge: CodexInstancesB
   scroller.appendChild(table);
   const empty = document.createElement("p");
 
-  root.append(heading, status, error, refresh, empty, scroller);
+  root.append(heading, codexActivityLegend(), status, error, refresh, empty, scroller);
 
   function render(snapshot: CodexInstancesSnapshot): void {
     if (disposed) return;
@@ -79,7 +80,7 @@ export function mountCodexInstancesUI(root: HTMLElement, bridge: CodexInstancesB
     heading.textContent = `VS Code Codex instances (${snapshot.instances.length})`;
     status.textContent = !snapshot.supported ? "Process discovery is available on Windows."
       : snapshot.scanning ? "Scanning VS Code processes…"
-      : `${snapshot.scannedAt ? `Last scanned ${new Date(snapshot.scannedAt).toLocaleTimeString()}. ` : ""}Scans every 5 minutes.`;
+      : `${snapshot.scannedAt ? `Last scanned ${new Date(snapshot.scannedAt).toLocaleTimeString()}. ` : ""}Scans every 5 minutes. Activity checks every 10 seconds.`;
     error.textContent = [snapshot.error ? `Scan failed: ${snapshot.error}${snapshot.scannedAt ? " Showing the last successful scan." : ""}` : "", snapshot.warning].filter(Boolean).join(" ");
     refresh.disabled = snapshot.scanning || !snapshot.supported;
     empty.textContent = !snapshot.instances.length && snapshot.supported && !snapshot.scanning && !snapshot.error
@@ -95,6 +96,7 @@ export function mountCodexInstancesUI(root: HTMLElement, bridge: CodexInstancesB
       [instance.title || "Window title unavailable", instance.workspace || "Folder unavailable", String(instance.vscodePid), String(instance.codexPid), updatedText].forEach((value, index) => {
         const cell = row.insertCell();
         cell.textContent = value;
+        if (index === 0) cell.prepend(codexActivityIcon(instance));
 
         if (index < 2) { cell.style.overflowWrap = "anywhere"; cell.style.minWidth = "150px"; }
         if (index === 1 && instance.workspaceKind === "workspace") cell.title = "VS Code workspace file";
@@ -108,6 +110,14 @@ export function mountCodexInstancesUI(root: HTMLElement, bridge: CodexInstancesB
   }
 
   const unsubscribe = bridge.onCodexInstancesChanged(snapshot => { revision++; render(snapshot); });
+  // Expire a last-known indicator even if its producer stops publishing.
+  const activityExpiry = setInterval(() => {
+    if (!latest || disposed) return;
+    for (const row of Array.from(body.rows)) {
+      const instance = latest.instances.find(item => String(item.codexPid) === row.dataset.codexPid);
+      if (instance) row.querySelector("[data-codex-activity]")?.replaceWith(codexActivityIcon(instance));
+    }
+  }, 5000);
   const initialRevision = revision;
   void bridge.getCodexInstances().then(snapshot => { if (revision === initialRevision) render(snapshot); })
     .catch(reason => { if (!disposed && revision === initialRevision) error.textContent = String(reason); });
@@ -117,5 +127,5 @@ export function mountCodexInstancesUI(root: HTMLElement, bridge: CodexInstancesB
       if (!disposed) { error.textContent = String(reason); refresh.disabled = false; }
     });
   });
-  return () => { disposed = true; unsubscribe(); root.replaceChildren(); };
+  return () => { disposed = true; clearInterval(activityExpiry); unsubscribe(); root.replaceChildren(); };
 }

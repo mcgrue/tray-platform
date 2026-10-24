@@ -12,7 +12,16 @@ export interface CodexIpcResponse {
   error?: string;
 }
 
-/** Local extension IPC, verified against openai.chatgpt 26.1007.21434.
+export interface CodexIpcBroadcast {
+  type: "broadcast";
+  method: string;
+  version?: number;
+  sourceClientId: string;
+  params: any;
+}
+
+/** Local extension IPC, verified against openai.chatgpt 26.1007.21434;
+ * read-only status subscriptions also verified against 26.1021.22027.
  * This is a versioned internal protocol, not the app-server stdio protocol.
  * Never create a router, reconnect, or replay a possibly delivered message.
  */
@@ -23,7 +32,16 @@ export class CodexIpcClient {
   private closed = false;
   private pending = new Map<string, { resolve(value: CodexIpcResponse): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> }>();
 
-  constructor(private readonly endpoint = "\\\\.\\pipe\\codex-ipc", private readonly timeoutMs = 15000) {}
+  constructor(private readonly endpoint = "\\\\.\\pipe\\codex-ipc", private readonly timeoutMs = 15000,
+    private readonly onBroadcast?: (message: CodexIpcBroadcast) => void) {}
+
+  /** Status observers may follow an existing stream; this never acquires ownership. */
+  followThread(conversationId: string, owner: string, following: boolean): void {
+    if (this.closed || !this.socket?.writable) throw new Error("Codex is not connected.");
+    this.write({ type: "broadcast", sourceClientId: this.clientId, version: 1,
+      method: "thread-stream-following-changed", targetClientIds: [owner],
+      params: { hostId: "local", conversationId, following } });
+  }
 
   async connect(): Promise<void> {
     if (this.closed || this.socket) throw new Error("Codex connection is already used.");
@@ -90,8 +108,7 @@ export class CodexIpcClient {
           this.pending.delete(message.requestId);
           clearTimeout(pending.timer);
           pending.resolve(message);
-        }
-        // No subscription to thread content; unrelated broadcasts are ignored.
+        } else if (message.type === "broadcast") this.onBroadcast?.(message);
       }
     } catch { this.fail(new Error("Codex returned an unreadable response; delivery could not be confirmed. Check the conversation before sending again.")); }
   }

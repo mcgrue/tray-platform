@@ -45,7 +45,7 @@ public static class CodexActivitySqlite {
         try { if (sqlite3_step(statement) != 101) throw new Exception("Cannot read Codex activity."); }
         finally { sqlite3_finalize(statement); }
     }
-    public static List<Dictionary<string, object>> Read(string logs, string state, long since) {
+    public static List<Dictionary<string, object>> Read(string logs, string state, long since, bool includeSubmissions) {
         IntPtr db = IntPtr.Zero;
         try {
             // SQLITE_OPEN_READONLY | SQLITE_OPEN_URI. Attached state DB is also read-only.
@@ -53,13 +53,18 @@ public static class CodexActivitySqlite {
                 throw new Exception("Cannot open Codex activity read-only.");
             sqlite3_busy_timeout(db, 1000);
             Execute(db, "ATTACH DATABASE '" + (new Uri(state).AbsoluteUri + "?mode=ro").Replace("'", "''") + "' AS state");
-            // Sampling spans identify the process executing a turn, unlike UI broadcasts.
+            // Execution spans identify the process, unlike UI broadcasts. Activity
+            // also includes admitted turns that have not reached their first sample.
+            string sampling = "instr(feedback_log_body, 'run_sampling_request{turn_id=') > 0";
+            string submission = "instr(feedback_log_body, 'submission_dispatch{otel.name=\"op.dispatch.turn_input\" submission.id=\"') > 0";
             string sql = @"SELECT process_uuid, thread_id,
-                substr(feedback_log_body, instr(feedback_log_body, 'run_sampling_request{turn_id=') + length('run_sampling_request{turn_id='), 36) AS turn_id,
+                CASE WHEN " + sampling + @" THEN
+                  substr(feedback_log_body, instr(feedback_log_body, 'run_sampling_request{turn_id=') + length('run_sampling_request{turn_id='), 36)
+                ELSE substr(feedback_log_body, instr(feedback_log_body, 'submission.id=""') + length('submission.id=""'), 36) END AS turn_id,
                 min(ts * 1000.0 + ts_nanos / 1000000.0), max(ts * 1000.0 + ts_nanos / 1000000.0), threads.rollout_path
                 FROM logs JOIN state.threads ON threads.id = logs.thread_id
                 WHERE ts >= " + since.ToString(System.Globalization.CultureInfo.InvariantCulture) + @"
-                AND instr(feedback_log_body, 'run_sampling_request{turn_id=') > 0
+                AND (" + sampling + (includeSubmissions ? " OR " + submission : "") + @")
                 GROUP BY process_uuid, thread_id, turn_id, threads.rollout_path
                 ORDER BY max(ts) DESC LIMIT 20001";
             IntPtr statement = Prepare(db, sql);
@@ -81,7 +86,7 @@ public static class CodexActivitySqlite {
     }
 }
 '@
-    $rows = [CodexActivitySqlite]::Read($logsPath, $statePath, [long]$request.sinceSeconds)
+    $rows = [CodexActivitySqlite]::Read($logsPath, $statePath, [long]$request.sinceSeconds, [bool]$request.includeSubmissions)
     @{ ok = $true; result = @($rows.ToArray()) } | ConvertTo-Json -Compress -Depth 5
 } catch {
     @{ ok = $false; error = 'Codex edit history is unavailable.' } | ConvertTo-Json -Compress

@@ -18,6 +18,7 @@ import { TitlebarController, titlebarConfig, titlebarWindowOptions } from "./tit
 import { TitlebarAction } from "../shared/titlebar";
 import { CodexDiscovery } from "./codex-discovery";
 import { CodexInstanceService } from "./codex-instance-service";
+import { CodexActivity } from "./codex-activity";
 import { createCodexInstancesApi } from "./codex-instances-api";
 import { CodexAttention } from "./codex-attention";
 import { CodexMessageService } from "./codex-message-service";
@@ -71,7 +72,9 @@ export const applicationReady = singleInstance ? app.whenReady().then(async () =
   await bookmarks.initialize();
   const desktop = new DesktopService({ openUrl: (link) => shell.openExternal(link), appPid: process.pid });
   const codexDiscovery = new CodexDiscovery(desktop);
-  const codexInstances = new CodexInstanceService({ scan: () => codexDiscovery.scan() });
+  const codexInstances = new CodexInstanceService({ scan: () => codexDiscovery.scan(), activity: new CodexActivity({
+    verifyProcesses: instances => desktop.areProcessesRunning(instances.map(instance => ({ pid: instance.codexPid, startedAt: instance.codexStartedAt }))),
+  }) });
   const codexAttention = new CodexAttention(desktop, codexInstances);
   const codexMessages = new CodexMessageService();
   const codexQuestions = new CodexQuestionService(codexMessages);

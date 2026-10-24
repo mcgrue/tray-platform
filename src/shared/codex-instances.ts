@@ -1,3 +1,5 @@
+export type CodexActivityState = "working" | "waiting" | "idle" | "unknown";
+
 export interface CodexInstance {
   codexPid: number;
   codexStartedAt: string;
@@ -10,6 +12,8 @@ export interface CodexInstance {
   workspace?: string;
   workspaceKind?: "folder" | "workspace";
   lastFileUpdatedAt?: number;
+  activity?: CodexActivityState;
+  activityCheckedAt?: number;
 }
 
 export interface CodexInstancesSnapshot {

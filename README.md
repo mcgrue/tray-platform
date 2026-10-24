@@ -98,6 +98,22 @@ existing source/id returns HTTP 412 without changing the entry, its timestamp,
 its selected destination, or its disposition. Ordinary PUT updates keep their
 existing behavior.
 
+## Codex instance activity
+
+Each entry on **Codex Instances** starts with an activity icon: blue play for
+Working, amber pause for Waiting on input or approval, green check for Idle,
+and a gray question mark for Unknown. Hover for the meaning; screen readers
+receive the same status label. Idle describes execution state, not task success.
+
+Activity is checked every 10 seconds separately from the five-minute process
+scan. It combines read-only native thread snapshots for the conversations
+attributed to that process in Codex's execution history. Working takes precedence
+over waiting; idle requires every observed conversation to report idle. Missing
+history, unavailable owners, unsupported protocol versions, and observations older
+than 30 seconds show Unknown. This uses local Codex internals (stream version 11),
+so older extensions may show Unknown. No messages, approvals, or turns are sent.
+Quit and reopen Tray Platform after building to load the activity reader.
+
 ## Codex question notifications
 
 ### Install for your user

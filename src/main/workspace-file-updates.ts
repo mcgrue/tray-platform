@@ -104,6 +104,12 @@ export class CodexFileUpdates {
     this.cache.clear();
   }
 
+  async readTurnOwners(sinceSeconds: number, includeSubmissions = false): Promise<CodexTurnOwner[]> {
+    const response = await (this.options.readOwners ? this.options.readOwners(sinceSeconds) : this.readOwners(sinceSeconds, includeSubmissions));
+    if (!Array.isArray(response) || !response.every(isTurnOwner)) throw new Error("Codex turn ownership is unavailable.");
+    return response;
+  }
+
   private isSessionPath(file: string): boolean {
     return ["sessions", "archived_sessions"].some(directory => {
       // Codex stores both ordinary and extended-length Windows paths.
@@ -143,7 +149,7 @@ export class CodexFileUpdates {
     } catch { return []; }
   }
 
-  private readOwners(sinceSeconds: number): Promise<unknown> {
+  private readOwners(sinceSeconds: number, includeSubmissions = false): Promise<unknown> {
     if (process.platform !== "win32" || this.closed) return Promise.resolve([]);
     return new Promise((resolve, reject) => {
       const executable = path.join(process.env.SystemRoot || "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
@@ -173,7 +179,7 @@ export class CodexFileUpdates {
           finish(undefined, response.result);
         } catch { finish(new Error("Codex edit history is unavailable.")); }
       });
-      child.stdin.end(JSON.stringify({ codexHome: this.codexHome, sinceSeconds }));
+      child.stdin.end(JSON.stringify({ codexHome: this.codexHome, sinceSeconds, includeSubmissions }));
     });
   }
 }

@@ -150,6 +150,8 @@ tbody tr:hover td[data-instance-actions] { background: var(--accent); }
 [data-instance-menu-toggle] svg { fill: currentColor; }
 [data-instance-menu] { position: fixed; z-index: 30; min-width: 160px; max-width: calc(100vw - 16px); padding: 4px; background: var(--popover); color: var(--popover-foreground); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-lg); }
 [data-instance-menu] button { display: block; width: 100%; margin: 0; text-align: left; background: transparent; border-color: transparent; box-shadow: none; }
+[data-codex-approval] { margin-top: 16px; }
+[data-approval-preview] { max-width: 100%; max-height: 60vh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; padding: 12px; background: var(--background); border: 1px solid var(--border); border-radius: var(--radius); font: 12px/1.5 var(--font-mono); }
 
 /* Native window state colors are supplied by the titlebar bridge. */
 #app-titlebar { position: fixed; inset: 0 0 auto; height: 36px; z-index: 1000; background: var(--sidebar); color: var(--sidebar-foreground); -webkit-app-region: drag; user-select: none; }

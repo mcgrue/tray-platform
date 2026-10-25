@@ -122,7 +122,7 @@ export function createAttentionWeb(options: {
         else throw new AttentionError("Unknown endpoint", 404);
         return;
       }
-      const match = /^\/api\/attention\/([^/]+)\/([^/]+)\/(state|questions|answers|messages|file)$/.exec(pathname);
+      const match = /^\/api\/attention\/([^/]+)\/([^/]+)\/(state|questions|answers|messages|file|approvals)$/.exec(pathname);
       if (!match) throw new AttentionError("Unknown endpoint", 404);
       let source: string, id: string;
       try { source = decodeURIComponent(match[1]); id = decodeURIComponent(match[2]); } catch { throw new AttentionError("Invalid URL encoding"); }
@@ -138,6 +138,14 @@ export function createAttentionWeb(options: {
         res.writeHead(200, { ...file.headers, "Content-Length": file.body.length }); res.end(file.body); return;
       }
       if (action === "questions" && req.method === "GET") { sendJson(res, 200, await operations.questions(source, id)); return; }
+      if (action === "approvals") {
+        if (!operations.approval || !operations.approve) throw new AttentionError("Approvals are unavailable", 503);
+        if (req.method === "GET") { sendJson(res, 200, operations.approval(source, id)); return; }
+        const input = await readJson(req);
+        if (input.value !== "accept" && input.value !== "decline") throw new AttentionError("Choose Allow once or Decline");
+        const receipt = await receipts.run(user, input.requestId, { source, id, action, value: input.value }, () => operations.approve!(source, id, input.value));
+        sendJson(res, 200, receipt); return;
+      }
       if (action === "questions" || req.method !== "POST") throw new AttentionError("Method not allowed", 405);
       const input = await readJson(req);
       if (action === "state") { await attention.setState(source, id, input.state, input.minutes); sendJson(res, 200, { ok: true }); return; }

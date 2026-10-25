@@ -23,10 +23,38 @@ async function fixture() {
     { pid: 12, startedAt: instance.vscodeStartedAt, parentPid: 0, name: "Code.exe" },
   ]);
   const completed = jest.fn();
+  const interaction = jest.fn(async () => ({ decision: "decline" }));
   const createClient = jest.fn((_exe, _cwd, handlers) => { callbacks = handlers; return { request, close }; });
-  const service = new CodexProjectSessions({ processes, createClient, completed });
-  return { cwd, instance, service, processes, request, close, completed, createClient, notify: (method: string, params: any) => callbacks.notification(method, params) };
+  const service = new CodexProjectSessions({ processes, createClient, completed, interaction });
+  return { cwd, instance, service, processes, request, close, completed, createClient, interaction,
+    serverRequest: (method: string, params: any, context: any) => callbacks.serverRequest(method, params, context),
+    notify: (method: string, params: any) => callbacks.notification(method, params) };
 }
+
+test("only complete proposals for the exact thread, turn and item reach the approval callback", async () => {
+  const f = await fixture(); await f.service.conversations(f.instance);
+  const item = { id: "item", type: "fileChange", changes: [{ path: "source.ts", diff: "-old\n+new" }] };
+  const params = { threadId: "thread", turnId: "turn", itemId: "item" };
+  const context = { requestId: 1, signal: new AbortController().signal, responded: Promise.resolve() };
+  const method = "item/fileChange/requestApproval";
+  f.notify("item/started", { ...params, item });
+  await f.serverRequest(method, params, context);
+  expect(f.interaction).toHaveBeenLastCalledWith(f.instance, method, params, context, item);
+  for (const field of ["threadId", "turnId", "itemId"]) {
+    const other = { ...params, [field]: "other" }; await f.serverRequest(method, other, context);
+    expect(f.interaction).toHaveBeenLastCalledWith(f.instance, method, other, context, undefined);
+  }
+  f.notify("item/started", { ...params, item: { ...item, changes: [{ path: "source.ts", diff: "x".repeat(180001) }] } });
+  await f.serverRequest(method, params, context);
+  expect(f.interaction).toHaveBeenLastCalledWith(f.instance, method, params, context, undefined);
+  for (const event of ["item/completed", "turn/completed", "thread/closed"]) {
+    f.notify("item/started", { ...params, item });
+    f.notify(event, { ...params, item, turn: { id: params.turnId, status: "completed" } });
+    await f.serverRequest(method, params, context);
+    expect(f.interaction).toHaveBeenLastCalledWith(f.instance, method, params, context, undefined);
+  }
+  f.service.close();
+});
 
 test("lists saved project conversations without resuming or starting a turn", async () => {
   const f = await fixture();

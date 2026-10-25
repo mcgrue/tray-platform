@@ -31,6 +31,7 @@ export interface AttentionInput {
   destination?: Destination;
   origin?: CodexOrigin;
   sound?: string;
+  approval?: import("./codex-approval").CodexApproval;
 }
 
 export function canNavigateAttention(item: AttentionInput | undefined): boolean {
@@ -66,13 +67,15 @@ export interface AttentionNavigationProgress extends NavigationProgress {
 }
 
 export interface AttentionBridge {
-  onRecoveredDelivery?(callback: (delivery: { source: string; id: string; action: "messages" | "answers" }) => void): () => void;
+  onRecoveredDelivery?(callback: (delivery: { source: string; id: string; action: "messages" | "answers" | "approvals" }) => void): () => void;
   getAttention(): Promise<AttentionSnapshot>;
   setAttentionState(source: string, id: string, state: AttentionState, minutes?: number): Promise<void>;
   goToAttention(source: string, id: string): Promise<void>;
   sendAttentionMessage?(source: string, id: string, message: string): Promise<import("./codex-message").CodexMessageReceipt>;
   getAttentionQuestion?(source: string, id: string): Promise<import("./codex-question").CodexQuestion[]>;
   answerAttentionQuestion?(source: string, id: string, answers: import("./codex-question").CodexQuestionAnswer[]): Promise<import("./codex-question").CodexAnswerReceipt>;
+  getAttentionApproval?(source: string, id: string): Promise<import("./codex-approval").CodexApproval>;
+  answerAttentionApproval?(source: string, id: string, decision: import("./codex-approval").CodexApprovalDecision): Promise<import("./codex-approval").CodexApprovalReceipt>;
   setAttentionDestination(source: string, id: string, destination: Destination): Promise<void>;
   listWindows(): Promise<WindowDestination[]>;
   onAttentionChanged(callback: (snapshot: AttentionSnapshot) => void): () => void;

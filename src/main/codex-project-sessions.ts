@@ -2,7 +2,7 @@ import { promises as fs } from "fs";
 import path from "path";
 import { CodexInstance, CodexInstanceConversation, ProcessDescriptor } from "../shared/codex-instances";
 import { CodexMessageReceipt, isCodexSessionId } from "../shared/codex-message";
-import { CodexAppServer, CodexRpc } from "./codex-app-server";
+import { CodexAppServer, CodexRpc, CodexServerRequestContext } from "./codex-app-server";
 import { findCodexProcesses } from "./codex-discovery";
 
 const identity = (instance: CodexInstance) => JSON.stringify([instance.codexPid, instance.codexStartedAt]);
@@ -19,11 +19,11 @@ export class CodexProjectSessions {
     processes(): Promise<ProcessDescriptor[]>;
     createClient?: (executable: string, cwd: string, callbacks: {
       notification(method: string, params: any): void;
-      serverRequest(method: string, params: any): Promise<unknown>;
+      serverRequest(method: string, params: any, context: CodexServerRequestContext): Promise<unknown>;
       exited(error: Error): void;
     }) => CodexRpc;
     completed?(instance: CodexInstance, sessionId: string, turnId: string, text: string, status: string): void;
-    interaction?(instance: CodexInstance, method: string, params: any): Promise<unknown>;
+    interaction?(instance: CodexInstance, method: string, params: any, context: CodexServerRequestContext, proposedItem?: unknown): Promise<unknown>;
   }) {}
 
   owns(sessionId: string) { return this.sessions.has(sessionId); }
@@ -124,9 +124,20 @@ export class CodexProjectSessions {
     if (!(await fs.stat(cwd)).isDirectory()) throw new Error("The project folder is unavailable.");
     if (this.closed) throw new Error("Codex project messaging is closed.");
     const runtime: Runtime = { client: undefined as any, cwd, instance, sessions: new Set(), turns: new Map(), output: new Map() };
+    const proposed = new Map<string, any>();
+    const itemKey = (threadId: string, turnId: string, itemId: string) => JSON.stringify([threadId, turnId, itemId]);
     const callbacks = {
       notification: (method: string, params: any) => {
         const id = params?.threadId;
+        if (method === "item/started" && ["commandExecution", "fileChange"].includes(params.item?.type)) {
+          const key = itemKey(id, params.turnId, params.item.id);
+          // An absent proposal disables Allow once; never retain an incomplete diff as complete.
+          proposed.delete(key);
+          if (JSON.stringify(params.item).length <= 180000) proposed.set(key, params.item);
+          while (proposed.size > 128) proposed.delete(proposed.keys().next().value!);
+        }
+        if (method === "item/completed") proposed.delete(itemKey(id, params.turnId, params.item?.id));
+        if (method === "thread/closed") for (const key of proposed.keys()) if (JSON.parse(key)[0] === id) proposed.delete(key);
         if (method === "turn/started") { runtime.turns.set(id, params.turn.id); runtime.output.set(id, new Map()); }
         if (method === "item/agentMessage/delta" || (method === "item/completed" && params.item?.type === "agentMessage")) {
           const messages = runtime.output.get(id) || new Map<string, string>();
@@ -137,14 +148,16 @@ export class CodexProjectSessions {
           runtime.output.set(id, messages);
         }
         if (method === "turn/completed") {
+          for (const key of proposed.keys()) if (JSON.parse(key)[0] === id && JSON.parse(key)[1] === params.turn.id) proposed.delete(key);
           if (runtime.turns.get(id) === params.turn.id) runtime.turns.delete(id);
           const text = [...(runtime.output.get(id)?.values() || [])].join("\n\n").slice(-18000) || params.turn.error?.message || "Codex finished without a text response.";
           runtime.output.delete(id);
           this.options.completed?.(instance, id, params.turn.id, text, params.turn.status);
         }
       },
-      serverRequest: async (method: string, params: any) => {
-        if (this.options.interaction) return this.options.interaction(instance, method, params);
+      serverRequest: async (method: string, params: any, context: CodexServerRequestContext) => {
+        if (this.options.interaction) return this.options.interaction(instance, method, params, context,
+          proposed.get(itemKey(params?.threadId, params?.turnId, params?.itemId)));
         throw new Error(`Open this conversation in Codex to handle ${method}.`);
       },
       exited: (error: Error) => {

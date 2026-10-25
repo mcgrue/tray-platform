@@ -33,6 +33,8 @@ contextBridge.exposeInMainWorld("ipcComms", {
   sendAttentionMessage: (source, id, message) => ipcRenderer.invoke("attention-message", source, id, message),
   getAttentionQuestion: (source, id) => ipcRenderer.invoke("attention-question", source, id),
   answerAttentionQuestion: (source, id, answers) => ipcRenderer.invoke("attention-answer", source, id, answers),
+  getAttentionApproval: (source, id) => ipcRenderer.invoke("attention-approval", source, id),
+  answerAttentionApproval: (source, id, decision) => ipcRenderer.invoke("attention-approve", source, id, decision),
   setAttentionDestination: (source, id, destination) => ipcRenderer.invoke("attention-destination", source, id, destination),
   listWindows: () => ipcRenderer.invoke("desktop-windows"),
   onAttentionChanged: (callback) => subscribe("attention-changed", callback),

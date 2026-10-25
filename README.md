@@ -121,7 +121,7 @@ and send, or select an existing conversation. **Send message** and Ctrl+Enter wo
 in either case. Open conversations use their existing Codex client; new or closed
 conversations run in a Tray-owned Codex app-server in the selected project using
 the installed runtime and normal Codex configuration. Tray preserves configured
-approval and sandbox policies. Command/file approvals appear as desktop dialogs;
+approval and sandbox policies. Command/file approvals appear in the shared inbox;
 other unsupported interactive requests produce an inbox notice to continue in
 VS Code. Responses appear in the Attention Inbox and can receive follow-ups there.
 Keep Tray Platform running while its conversations work; quitting stops its runtimes.
@@ -139,6 +139,33 @@ checks thread creation, saved-thread resumption, steering, and response delivery
 against the installed runtime with isolated history and a local fixture provider.
 The background runtime uses the documented
 [Codex app-server protocol](https://learn.chatgpt.com/docs/app-server).
+
+### Phone approvals
+
+For Tray-managed conversations, expand an **Approval required** inbox card on
+desktop or phone. Review the command, working directory, permissions/network
+destination, or file paths and diffs; choose **Allow once** or **Decline**.
+The first decision wins across devices, and the resolved card moves to **Done**.
+There are no session-wide or policy grants. Missing or incomplete file previews
+disable **Allow once**. VS Code-owned conversations retain their own approvals.
+
+Pending approvals trigger the existing phone notifications. A notification opens
+and expands its card. Offline controls are disabled. If a response is lost,
+**Check delivery** recovers its durable receipt without resending; **Check approval
+status** refreshes the card. Canceled requests, ended turns, runtime exits, and
+Tray restarts make old cards non-actionable. Unknown delivery means check the
+conversation; it does not mean execution succeeded. **Done**, **Snooze**, and
+**Reopen** cannot bypass approval controls.
+
+After building, `yarn electron dev-infrastructure/smoke-codex-approvals.cjs` checks
+the real desktop preload and phone HTTP paths with isolated approval callbacks,
+including conflicting decisions, lost responses, expiry, preview rendering, and
+notification links. It never approves a live Codex operation. A physical phone
+check is separate from the automated Chromium smoke.
+With `CODEX_CLI` set to the installed executable, run
+`node dev-infrastructure/smoke-codex-approval-runtime.cjs` to verify actual runtime
+command/file approval requests, previews, and allow/decline outcomes using an
+isolated project, temporary source files, and a deterministic localhost provider.
 
 ## Codex question notifications
 

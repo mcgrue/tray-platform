@@ -2,6 +2,7 @@ import { AttentionBridge, AttentionSnapshot, AttentionState, Destination } from 
 import { CodexMessageReceipt } from "../shared/codex-message";
 import { CodexAnswerReceipt, CodexQuestion, CodexQuestionAnswer } from "../shared/codex-question";
 import { CodexInstanceConversation, CodexInstancesBridge, CodexInstancesSnapshot, CodexInstanceTarget, RecoveredCodexInstanceMessage } from "../shared/codex-instances";
+import { CodexApproval, CodexApprovalDecision, CodexApprovalReceipt } from "../shared/codex-approval";
 
 interface Receipt { state: "unknown" | "succeeded"; result?: any; error?: string; }
 export class WebAttentionBridge implements AttentionBridge, CodexInstancesBridge {
@@ -14,7 +15,7 @@ export class WebAttentionBridge implements AttentionBridge, CodexInstancesBridge
   private stopped = false;
   private pending = new Map<string, string>();
   private checking?: Promise<void>;
-  private recovered = new Set<(delivery: { source: string; id: string; action: "messages" | "answers" }) => void>();
+  private recovered = new Set<(delivery: { source: string; id: string; action: "messages" | "answers" | "approvals" }) => void>();
   constructor(private connection: (online: boolean) => void, private deliveryChanged: () => void) {
     try {
       const saved = JSON.parse(sessionStorage.getItem("tray-pending-deliveries") || "[]");
@@ -65,7 +66,7 @@ export class WebAttentionBridge implements AttentionBridge, CodexInstancesBridge
   private publish(snapshot: AttentionSnapshot) { this.listeners.forEach(listener => listener(snapshot)); }
   getAttention() { return this.request<AttentionSnapshot>("/api/attention"); }
   onAttentionChanged(callback: (snapshot: AttentionSnapshot) => void) { this.listeners.add(callback); return () => { this.listeners.delete(callback); }; }
-  onRecoveredDelivery(callback: (delivery: { source: string; id: string; action: "messages" | "answers" }) => void) {
+  onRecoveredDelivery(callback: (delivery: { source: string; id: string; action: "messages" | "answers" | "approvals" }) => void) {
     this.recovered.add(callback); return () => { this.recovered.delete(callback); };
   }
   private route(source: string, id: string, action: string) { return `/api/attention/${encodeURIComponent(source)}/${encodeURIComponent(id)}/${action}`; }
@@ -95,6 +96,8 @@ export class WebAttentionBridge implements AttentionBridge, CodexInstancesBridge
   }
   sendAttentionMessage(source: string, id: string, message: string) { return this.deliver<CodexMessageReceipt>(source, id, "messages", message); }
   answerAttentionQuestion(source: string, id: string, answers: CodexQuestionAnswer[]) { return this.deliver<CodexAnswerReceipt>(source, id, "answers", answers); }
+  getAttentionApproval(source: string, id: string) { return this.request<CodexApproval>(this.route(source, id, "approvals")); }
+  answerAttentionApproval(source: string, id: string, decision: CodexApprovalDecision) { return this.deliver<CodexApprovalReceipt>(source, id, "approvals", decision); }
   getCodexInstances() { return this.request<CodexInstancesSnapshot>("/api/codex-instances"); }
   async refreshCodexInstances() {
     const snapshot = await this.request<CodexInstancesSnapshot>("/api/codex-instances/refresh", {});
@@ -123,8 +126,8 @@ export class WebAttentionBridge implements AttentionBridge, CodexInstancesBridge
         const receipt = await this.request<Receipt>(`/api/requests/${id}`);
         if (receipt.state === "succeeded") {
           this.pending.delete(route);
-          const match = /^\/api\/attention\/([^/]+)\/([^/]+)\/(messages|answers)$/.exec(route);
-          if (match) this.recovered.forEach(callback => callback({ source: decodeURIComponent(match[1]), id: decodeURIComponent(match[2]), action: match[3] as "messages" | "answers" }));
+          const match = /^\/api\/attention\/([^/]+)\/([^/]+)\/(messages|answers|approvals)$/.exec(route);
+          if (match) this.recovered.forEach(callback => callback({ source: decodeURIComponent(match[1]), id: decodeURIComponent(match[2]), action: match[3] as "messages" | "answers" | "approvals" }));
           const instance = /^\/api\/codex-instances\/([1-9]\d*)\/([^/]+)\/messages$/.exec(route);
           if (instance) this.recoveredInstances.forEach(callback => callback({ target: {
             codexPid: Number(instance[1]), codexStartedAt: decodeURIComponent(instance[2]),

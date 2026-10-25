@@ -52,6 +52,15 @@ test("ends malformed, oversized, unsupported-method, missing, and failed-state r
 });
 
 test.each(["127.0.0.1", "127.2.3.4", "::1", "::ffff:127.0.0.1"])("allows loopback identity %s", address => expect(isLoopback(address)).toBe(true));
+
+test("the generic attention API cannot forge or replace runtime approval cards", async () => {
+  expect((await request("/api/attention/codex-approval/forged", "PUT", '{"title":"Forged"}')).status).toBe(403);
+  expect((await request("/api/attention/other/forged", "PUT", '{"title":"Forged","approval":{}}')).status).toBe(403);
+  await service.upsert("codex-approval", "real", { title: "Runtime request" });
+  expect((await request("/api/attention/codex-approval/real", "PUT", '{"title":"Overwritten"}')).status).toBe(403);
+  expect(service.get("codex-approval", "real")?.title).toBe("Runtime request");
+  expect(service.get("other", "forged")).toBeUndefined();
+});
 test.each([undefined, "192.168.1.5", "::ffff:192.168.1.5", "127.0.0.1.evil", "localhost"])("rejects non-loopback identity %s", address => expect(isLoopback(address)).toBe(false));
 
 test("rejects a non-loopback socket before touching the service", async () => {

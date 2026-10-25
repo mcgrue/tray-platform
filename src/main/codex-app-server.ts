@@ -5,6 +5,12 @@ export interface CodexRpc {
   request(method: string, params: unknown): Promise<any>;
   close(): void;
 }
+export interface CodexServerRequestContext {
+  requestId: string | number;
+  signal: AbortSignal;
+  /** Response written to stdio; this does not confirm execution of the operation. */
+  responded: Promise<void>;
+}
 
 /** One owned stdio runtime. Never reconnect or replay an unacknowledged request. */
 export class CodexAppServer implements CodexRpc {
@@ -14,12 +20,13 @@ export class CodexAppServer implements CodexRpc {
   private buffer = "";
   private pending = new Map<number, { resolve(value: any): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> }>();
   private ready: Promise<any>;
+  private incoming = new Map<string, { params: any; controller: AbortController; reject(error: Error): void }>();
 
   constructor(executable: string, cwd: string, private readonly options: {
     env?: NodeJS.ProcessEnv;
     timeoutMs?: number;
     notification?(method: string, params: any): void;
-    serverRequest?(method: string, params: any): Promise<unknown>;
+    serverRequest?(method: string, params: any, context: CodexServerRequestContext): Promise<unknown>;
     exited?(error: Error): void;
   } = {}) {
     const env = { ...(options.env || process.env) };
@@ -68,6 +75,14 @@ export class CodexAppServer implements CodexRpc {
         if (message.method && message.id !== undefined) {
           void this.reply(message);
         } else if (message.method) {
+          for (const [key, entry] of this.incoming) {
+            const params = message.params;
+            if ((message.method === "serverRequest/resolved" && key === JSON.stringify(params?.requestId) && entry.params?.threadId === params?.threadId) ||
+              (message.method === "turn/completed" && entry.params?.threadId === params?.threadId && entry.params?.turnId === params?.turn?.id) ||
+              (message.method === "thread/closed" && entry.params?.threadId === params?.threadId)) {
+              this.incoming.delete(key); entry.controller.abort(); entry.reject(new Error("Codex approval request expired."));
+            }
+          }
           this.options.notification?.(message.method, message.params);
         } else {
           const entry = this.pending.get(message.id);
@@ -81,18 +96,40 @@ export class CodexAppServer implements CodexRpc {
   }
 
   private async reply(message: any) {
+    const key = JSON.stringify(message.id);
+    if ((typeof message.id !== "string" && !Number.isSafeInteger(message.id)) || this.incoming.has(key)) {
+      this.fail(new Error("Codex sent an invalid or duplicate server request ID.")); return;
+    }
+    const controller = new AbortController();
+    let resolve!: () => void, reject!: (error: Error) => void;
+    const responded = new Promise<void>((yes, no) => { resolve = yes; reject = no; });
+    void responded.catch(() => {});
+    const incoming = { params: message.params, controller, reject };
+    this.incoming.set(key, incoming);
+    const send = (payload: unknown) => {
+      if (this.closed || controller.signal.aborted) return;
+      try {
+        this.child.stdin!.write(JSON.stringify(payload) + "\n", error => {
+          if (error) { reject(error); this.fail(error); return; }
+          if (this.incoming.get(key) !== incoming) return;
+          this.incoming.delete(key); resolve();
+        });
+      } catch (error) { reject(error as Error); this.fail(error as Error); }
+    };
     try {
       if (!this.options.serverRequest) throw new Error(`Codex requires interaction: ${message.method}. Open the conversation in Codex.`);
-      const result = await this.options.serverRequest(message.method, message.params);
-      if (!this.closed) this.write({ id: message.id, result });
+      const result = await this.options.serverRequest(message.method, message.params, { requestId: message.id, signal: controller.signal, responded });
+      send({ id: message.id, result });
     } catch (error) {
-      if (!this.closed) this.write({ id: message.id, error: { code: -32603, message: (error as Error).message } });
+      send({ id: message.id, error: { code: -32603, message: (error as Error).message } });
     }
   }
 
   private fail(error: Error, report = true) {
     if (this.closed) return;
     this.closed = true;
+    for (const entry of this.incoming.values()) { entry.controller.abort(); entry.reject(error); }
+    this.incoming.clear();
     for (const entry of this.pending.values()) { clearTimeout(entry.timer); entry.reject(error); }
     this.pending.clear(); this.child.kill();
     if (report) this.options.exited?.(error);

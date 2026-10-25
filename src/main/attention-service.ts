@@ -3,6 +3,7 @@ import path = require("path");
 import { randomBytes } from "crypto";
 import { AttentionInput, AttentionItem, AttentionSnapshot, AttentionState, CodexOrigin, Destination } from "../shared/attention";
 import { isCodexSessionId } from "../shared/codex-message";
+import { CODEX_APPROVAL_SOURCE, CodexApproval, pendingApproval } from "../shared/codex-approval";
 
 const sounds = new Set<string>(Object.values(require("../shared/sounds.json").sounds).map((sound: any) => sound.id));
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
@@ -73,11 +74,23 @@ export function validateAttentionInput(value: unknown): AttentionInput {
   }
   if (input.destination !== undefined) result.destination = validateDestination(input.destination);
   if (input.origin !== undefined) result.origin = validateCodexOrigin(input.origin);
+  if (input.approval !== undefined) result.approval = validateApproval(input.approval);
   if (input.sound !== undefined) {
     if (!sounds.has(input.sound)) throw new AttentionError("Unknown sound ID");
     result.sound = input.sound;
   }
   return result;
+}
+
+function validateApproval(value: unknown): CodexApproval {
+  const approval = object(value);
+  if (!["command", "file", "network"].includes(approval.kind) ||
+    !["pending", "sending", "allowed", "declined", "expired", "unknown"].includes(approval.status) ||
+    typeof approval.canAllow !== "boolean" || typeof approval.canDecline !== "boolean") throw new AttentionError("Invalid approval");
+  return { kind: approval.kind, status: approval.status, canAllow: approval.canAllow, canDecline: approval.canDecline,
+    threadId: text(approval.threadId, "approval conversation", 200), turnId: text(approval.turnId, "approval turn", 200),
+    itemId: text(approval.itemId, "approval item", 200), details: text(approval.details, "approval details", 200000),
+    ...(approval.notice ? { notice: text(approval.notice, "approval notice", 2000) } : {}) };
 }
 
 function validateStore(value: unknown): AttentionItem[] {
@@ -168,9 +181,21 @@ export class AttentionService {
       if (state === "snoozed" && ![5, 15, 60].includes(minutes!)) throw new AttentionError("Snooze must be 5, 15, or 60 minutes");
       const item = items.find(item => item.source === source && item.id === id);
       if (!item) throw new AttentionError("Attention item not found", 404);
+      if (item.approval) throw new AttentionError("Resolve approval requests using their approval controls.", 409);
       item.state = state; item.updatedAt = this.now();
       if (state === "snoozed") item.snoozedUntil = this.now() + minutes! * 60000;
       else delete item.snoozedUntil;
+      return { result: undefined, sounds: [] };
+    });
+  }
+
+  updateApproval(id: string, approval: CodexApproval): Promise<void> {
+    const validated = validateApproval(approval);
+    return this.mutate(async items => {
+      const item = items.find(item => item.source === CODEX_APPROVAL_SOURCE && item.id === id);
+      if (!item?.approval) throw new AttentionError("Approval no longer exists", 404);
+      item.approval = validated; item.state = pendingApproval(validated) ? "pending" : "done";
+      item.updatedAt = this.now(); delete item.snoozedUntil;
       return { result: undefined, sounds: [] };
     });
   }

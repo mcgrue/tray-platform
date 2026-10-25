@@ -7,23 +7,28 @@ import { AttentionService } from "./attention-service";
 import { createAttentionWeb, validateWebConfig } from "./attention-web";
 import { WebReceipts } from "./web-receipts";
 import { WebPushService } from "./web-push-service";
+import { CodexApprovalService } from "./codex-approval-service";
 
 const origin = "https://fixture.ts.net";
 let attention: AttentionService, web: ReturnType<typeof createAttentionWeb>, push: WebPushService, port: number;
 let messages: jest.Mock, answers: jest.Mock;
+let approvals: CodexApprovalService;
 beforeEach(async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "tray-web-api-"));
   attention = new AttentionService(path.join(dir, "attention.json")); await attention.initialize();
+  approvals = new CodexApprovalService(attention); await approvals.initialize();
   await attention.upsert("codex", "a", { title: "Fixture", codexSessionId: "fixture" });
   const receipts = new WebReceipts(path.join(dir, "receipts.json")); await receipts.initialize();
   push = new WebPushService(path.join(dir, "push.json"), origin, async () => {}, ["owner"]); await push.initialize(attention.list());
   messages = jest.fn(async () => ({ sessionId: "fixture", turnId: "turn", delivery: "started" }));
   answers = jest.fn(async () => ({ remainingQuestions: 1 }));
   web = createAttentionWeb({ config: { origin, allowedUsers: ["owner"], port: 0 }, attention, receipts, push, assets: path.join(process.cwd(), "src/web"),
-    operations: { message: messages, answer: answers, questions: async () => [] } as any });
+    operations: { message: messages, answer: answers, questions: async () => [],
+      approval: (source: string, id: string) => approvals.get(source, id),
+      approve: (source: string, id: string, decision: unknown) => approvals.decide(source, id, decision) } as any });
   await new Promise<void>(resolve => web.server.listen(0, "127.0.0.1", resolve)); port = (web.server.address() as any).port;
 });
-afterEach(async () => { attention.close(); push.close(); const closed = new Promise<void>(resolve => web.server.once("close", resolve)); web.close(); await closed; });
+afterEach(async () => { approvals.close(); attention.close(); push.close(); const closed = new Promise<void>(resolve => web.server.once("close", resolve)); web.close(); await closed; });
 function request(url: string, method = "GET", data?: unknown, headers: Record<string, string> = {}) {
   return new Promise<{ status: number; body: any; headers: http.IncomingHttpHeaders }>((resolve, reject) => {
     const req = http.request({ hostname: "127.0.0.1", port, path: url, method,
@@ -82,6 +87,33 @@ test("SSE supplies an initial snapshot and subsequent durable state changes", as
     }); req.on("error", reject);
   });
   expect(snapshots[0].items[0].state).toBe("pending"); expect(snapshots[1].items[0].state).toBe("done");
+});
+
+test("approval decisions require identity and CSRF and preserve one decision across different receipt IDs", async () => {
+  const controller = new AbortController(), wire = jest.fn(); let ack!: () => void;
+  const result = approvals.request({ codexPid: 42, codexStartedAt: "2026-10-25T10:00:00Z", vscodePid: 12,
+    vscodeStartedAt: "2026-10-25T09:00:00Z", vscodeMainPid: 1, workspace: "D:/fixture" },
+    "item/commandExecution/requestApproval", { threadId: "thread", turnId: "turn", itemId: "item", command: "echo fixture" },
+    { requestId: 1, signal: controller.signal, responded: new Promise(resolve => { ack = resolve; }) }).then(value => { wire(value); ack(); });
+  while (!attention.list().items.some(item => item.approval)) await new Promise(resolve => setTimeout(resolve, 1));
+  const item = attention.list().items.find(item => item.approval)!;
+  const route = `/api/attention/${item.source}/${item.id}/approvals`, valid = await headers();
+  const data = { requestId: `${Date.now()}-${randomUUID()}`, value: "accept" };
+  expect((await request(route, "GET", undefined, { "Tailscale-User-Login": "other" })).status).toBe(403);
+  expect((await request(route, "GET")).body.status).toBe("pending");
+  for (const override of [{ Origin: "https://evil.test" }, { "X-Tray-CSRF": "" }, { "Tailscale-User-Login": "other" }]) {
+    expect((await request(route, "POST", data, { ...valid, ...override } as any)).status).toBe(403);
+  }
+  expect((await request(route, "POST", { ...data, value: "acceptForSession" }, valid)).status).toBe(400);
+  expect(wire).not.toHaveBeenCalled();
+  expect((await request(`/api/attention/${item.source}/${item.id}/state`, "POST", { state: "done" }, valid)).status).toBe(409);
+  const response = await request(route, "POST", data, valid);
+  expect(response.body).toMatchObject({ state: "succeeded", result: { approval: { status: "allowed" } } });
+  expect((await request(route, "POST", data, valid)).body).toEqual(response.body);
+  expect((await request(`/api/requests/${data.requestId}`)).body).toEqual(response.body);
+  expect((await request(route, "POST", { ...data, value: "decline" }, valid)).status).toBe(409);
+  expect((await request(route, "POST", { requestId: `${Date.now()}-${randomUUID()}`, value: "decline" }, valid)).body.result.approval.status).toBe("allowed");
+  await result; expect(wire).toHaveBeenCalledTimes(1); expect(wire).toHaveBeenCalledWith({ decision: "accept" });
 });
 test("config is opt-in and rejects broad or insecure origins", () => {
   expect(validateWebConfig({ origin, allowedUsers: ["owner"] }).port).toBe(22223);

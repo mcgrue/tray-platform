@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, globalShortcut, ipcMain, shell } from "electron";
+import { app, BrowserWindow, globalShortcut, ipcMain, shell } from "electron";
 import path from "path";
 import { createHash } from "crypto";
 import { AttentionService } from "./attention-service";
@@ -29,6 +29,7 @@ import { attentionOperations } from "./attention-operations";
 import { startAttentionWeb } from "./attention-web";
 import { CodexInstanceMessages } from "./codex-instance-messages";
 import { CodexProjectSessions } from "./codex-project-sessions";
+import { CodexApprovalService } from "./codex-approval-service";
 
 require("dotenv").config();
 
@@ -69,6 +70,8 @@ export const applicationReady = singleInstance ? app.whenReady().then(async () =
     onSound: (id) => sendAudio("play-sound", id),
   });
   await attention.initialize();
+  const codexApprovals = new CodexApprovalService(attention);
+  await codexApprovals.initialize();
   const bookmarks = new BookmarkService(path.join(app.getPath("userData"), "bookmarks.json"), {
     attentionExists: (source, id) => Boolean(attention.get(source, id)),
   });
@@ -89,15 +92,9 @@ export const applicationReady = singleInstance ? app.whenReady().then(async () =
           vscodePid: instance.vscodePid, vscodeStartedAt: instance.vscodeStartedAt, title: instance.title },
       }, { createOnly: true }).catch(error => { if (error.status !== 412) console.error("Cannot publish Codex project result:", error); });
     },
-    interaction: async (instance, method, params) => {
+    interaction: async (instance, method, params, context, proposedItem) => {
       if (["item/commandExecution/requestApproval", "item/fileChange/requestApproval"].includes(method)) {
-        const response = await dialog.showMessageBox(mainWindow, { type: "question", title: `Codex: ${instance.title || instance.workspace}`,
-          message: method.includes("commandExecution") ? "Allow this Codex command?" : "Allow these Codex file changes?",
-          detail: [params.command, params.reason, params.cwd, params.grantRoot,
-            params.additionalPermissions && JSON.stringify(params.additionalPermissions),
-            params.networkApprovalContext && JSON.stringify(params.networkApprovalContext)].filter(Boolean).join("\n"),
-          buttons: ["Decline", "Allow once"], defaultId: 0, cancelId: 0 });
-        return { decision: response.response === 1 ? "accept" : "decline" };
+        return codexApprovals.request(instance, method, params, context, proposedItem);
       }
       const message = `Codex needs ${method}. Open this project conversation in VS Code to continue.`;
       await attention.upsert("codex", `project-interaction-${params.threadId || instance.codexPid}`, {
@@ -110,7 +107,7 @@ export const applicationReady = singleInstance ? app.whenReady().then(async () =
   const codexInstanceMessages = new CodexInstanceMessages({ inventory: codexInstances, messages: codexMessages, projects: codexProjects,
     verifyProcesses: identities => desktop.areProcessesRunning(identities) });
   const codexQuestions = new CodexQuestionService(codexMessages);
-  const operations = attentionOperations(attention, codexMessages, codexQuestions);
+  const operations = attentionOperations(attention, codexMessages, codexQuestions, codexApprovals);
   const unsubscribeCodex = codexInstances.onChanged(snapshot => {
     if (rendererReady && !mainWindow.isDestroyed()) mainWindow.webContents.send("codex-instances-changed", snapshot);
   });
@@ -227,6 +224,12 @@ export const applicationReady = singleInstance ? app.whenReady().then(async () =
     requireInbox(event);
     return operations.answer(source, id, answers);
   });
+  ipcMain.handle("attention-approval", (event, source: string, id: string) => {
+    requireInbox(event); return codexApprovals.get(source, id);
+  });
+  ipcMain.handle("attention-approve", (event, source: string, id: string, decision: unknown) => {
+    requireInbox(event); return codexApprovals.decide(source, id, decision);
+  });
   ipcMain.handle("attention-destination", (_event, source: string, id: string, destination: Destination) =>
     attention.setDestination(source, id, destination));
   ipcMain.handle("desktop-windows", () => desktop.listWindows());
@@ -320,6 +323,7 @@ export const applicationReady = singleInstance ? app.whenReady().then(async () =
     codexMessages.close();
     codexInstanceMessages.close();
     codexProjects.close();
+    codexApprovals.close();
     shortcuts.close();
     attention.close();
     bookmarks.close();
@@ -327,7 +331,7 @@ export const applicationReady = singleInstance ? app.whenReady().then(async () =
     server.close();
     web?.close();
   });
-  return { attention, desktop, mainWindow, tray, server, shortcuts, navigatePending, bookmarks, captureBookmarks, codexInstances, codexMessages, codexInstanceMessages, codexProjects };
+  return { attention, desktop, mainWindow, tray, server, shortcuts, navigatePending, bookmarks, captureBookmarks, codexInstances, codexMessages, codexInstanceMessages, codexProjects, codexApprovals };
 }) : Promise.resolve(undefined);
 
 applicationReady.catch((error) => {

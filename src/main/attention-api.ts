@@ -2,6 +2,7 @@ import { IncomingMessage, ServerResponse } from "http";
 import { isIP } from "net";
 import { AttentionInput, WindowDestination } from "../shared/attention";
 import { AttentionError, AttentionService } from "./attention-service";
+import { CODEX_APPROVAL_SOURCE } from "../shared/codex-approval";
 
 export const MAX_ATTENTION_BODY_BYTES = 65536;
 
@@ -77,6 +78,7 @@ export function createAttentionApi(options: {
         catch { throw new AttentionError("Invalid URL encoding", 400); }
         if (!match[3] && req.method === "PUT") {
           const input = await readJson(req);
+          if (source === CODEX_APPROVAL_SOURCE || input.approval !== undefined) throw new AttentionError("Approval requests are owned by the Codex runtime", 403);
           const prepared = options.prepareInput ? await options.prepareInput(source, input) : input;
           const item = await options.attention.upsert(source, id, prepared, { createOnly: req.headers["if-none-match"] === "*" });
           sendJson(res, 200, { item });

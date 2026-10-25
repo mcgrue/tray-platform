@@ -5,6 +5,7 @@ import { mountCodexQuestionUI } from "./codex-question-ui";
 import { attentionContent } from "./attention-content";
 import { renderAttentionMarkdown } from "./attention-markdown";
 import { attentionFileHref } from "../shared/attention-link";
+import { mountCodexApprovalUI } from "./codex-approval-ui";
 
 let nextAttentionBodyId = 0;
 
@@ -167,7 +168,9 @@ export function mountAttentionUI(root: HTMLElement, bridge: AttentionBridge, opt
     const reopen = button("Reopen", () => void perform(() => bridge.setAttentionState(item.source, item.id, "pending")));
     actions.append(go, phoneLink, snooze, snoozeAction, done, reopen);
     const questionRoot = element("section");
-    body.append(metadata, origin, description, questionRoot, destination, progress, failure, actions);
+    const approvalRoot = element("section");
+    body.append(metadata, origin, description, approvalRoot, questionRoot, destination, progress, failure, actions);
+    const approval = mountCodexApprovalUI(approvalRoot, bridge, item);
     const markdownOptions = options.navigation === "phone" ? { localLink: (href: string) => attentionFileHref(item, href) } : {};
     const question = mountCodexQuestionUI(questionRoot, bridge, item, () => { questionLoaded = true; refresh(); }, markdownOptions);
     const messageRoot = element("section");
@@ -205,10 +208,11 @@ export function mountAttentionUI(root: HTMLElement, bridge: AttentionBridge, opt
       snooze.hidden = snoozeAction.hidden = item.state === "done";
       done.hidden = item.state === "done";
       reopen.hidden = item.state === "pending";
+      if (item.approval) snooze.hidden = snoozeAction.hidden = done.hidden = reopen.hidden = true;
       [snooze, snoozeAction, done, reopen].forEach(control => { control.disabled = busy; });
     }
     refresh();
-    return { node, expand() { setExpanded(true); }, update(next: AttentionItem) { item = next; refresh(); question.update(item); message.update(item); details?.update(item); }, dispose() { unsubscribeProgress?.(); question.dispose(); message.dispose(); details?.dispose(); } };
+    return { node, expand() { setExpanded(true); }, update(next: AttentionItem) { item = next; refresh(); approval.update(item); question.update(item); message.update(item); details?.update(item); }, dispose() { unsubscribeProgress?.(); approval.dispose(); question.dispose(); message.dispose(); details?.dispose(); } };
   }
 
   function render() {

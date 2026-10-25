@@ -67,7 +67,7 @@ export function mountAttentionUI(root: HTMLElement, bridge: AttentionBridge, opt
   const cards = new Map<string, { node: HTMLElement; expand(): void; update(item: AttentionItem): void; dispose(): void }>();
   const tabButtons = new Map<AttentionState, HTMLButtonElement>();
   let revealedKey = "";
-  (["pending", "snoozed", "done"] as AttentionState[]).forEach(state => {
+  (["pending", "done"] as AttentionState[]).forEach(state => {
     const tab = button(state[0].toUpperCase() + state.slice(1), () => { active = state; render(); });
     tabButtons.set(state, tab);
     tabs.appendChild(tab);
@@ -156,17 +156,9 @@ export function mountAttentionUI(root: HTMLElement, bridge: AttentionBridge, opt
       progress.textContent = navigationProgressText(update);
     });
     go.dataset.variant = "primary";
-    const snooze = element("select");
-    snooze.setAttribute("aria-label", "Snooze duration");
-    [5, 15, 60].forEach(minutes => {
-      const option = element("option", `${minutes} minutes`);
-      option.value = String(minutes);
-      snooze.appendChild(option);
-    });
-    const snoozeAction = button("Snooze", () => void perform(() => bridge.setAttentionState(item.source, item.id, "snoozed", Number(snooze.value))));
     const done = button("Done", () => void perform(() => bridge.setAttentionState(item.source, item.id, "done")));
     const reopen = button("Reopen", () => void perform(() => bridge.setAttentionState(item.source, item.id, "pending")));
-    actions.append(go, phoneLink, snooze, snoozeAction, done, reopen);
+    actions.append(go, phoneLink, done, reopen);
     const questionRoot = element("section");
     const approvalRoot = element("section");
     body.append(metadata, origin, description, approvalRoot, questionRoot, destination, progress, failure, actions);
@@ -185,8 +177,7 @@ export function mountAttentionUI(root: HTMLElement, bridge: AttentionBridge, opt
       const content = attentionContent(item);
       titleText.textContent = content.title;
       if (disclosure) titleText.title = content.title;
-      metadata.textContent = [item.source, item.project, new Date(item.createdAt).toLocaleString(),
-        item.state === "snoozed" && item.snoozedUntil ? `Snoozed until ${new Date(item.snoozedUntil).toLocaleString()}` : ""].filter(Boolean).join(" · ");
+      metadata.textContent = [item.source, item.project, new Date(item.createdAt).toLocaleString()].filter(Boolean).join(" · ");
       if (renderedDescription !== content.description) {
         description.innerHTML = renderAttentionMarkdown(content.description, markdownOptions);
         renderedDescription = content.description;
@@ -205,11 +196,10 @@ export function mountAttentionUI(root: HTMLElement, bridge: AttentionBridge, opt
         phoneLink.hidden = item.destination?.kind !== "url";
         if (item.destination?.kind === "url") phoneLink.href = urlDestination(item.destination.url).url;
       }
-      snooze.hidden = snoozeAction.hidden = item.state === "done";
       done.hidden = item.state === "done";
       reopen.hidden = item.state === "pending";
-      if (item.approval) snooze.hidden = snoozeAction.hidden = done.hidden = reopen.hidden = true;
-      [snooze, snoozeAction, done, reopen].forEach(control => { control.disabled = busy; });
+      if (item.approval) done.hidden = reopen.hidden = true;
+      [done, reopen].forEach(control => { control.disabled = busy; });
     }
     refresh();
     return { node, expand() { setExpanded(true); }, update(next: AttentionItem) { item = next; refresh(); approval.update(item); question.update(item); message.update(item); details?.update(item); }, dispose() { unsubscribeProgress?.(); approval.dispose(); question.dispose(); message.dispose(); details?.dispose(); } };

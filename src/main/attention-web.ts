@@ -11,6 +11,8 @@ import { readWebStore } from "./web-store";
 import { attentionFileResponse } from "./attention-files";
 import { CodexInstanceService } from "./codex-instance-service";
 import { CodexInstanceMessages } from "./codex-instance-messages";
+import { CodexAttachments } from "./codex-attachments";
+import { MAX_CODEX_UPLOAD_BODY } from "../shared/codex-attachments";
 
 export interface WebCodexInstances {
   instances: Pick<CodexInstanceService, "list" | "refresh" | "onChanged">;
@@ -38,9 +40,14 @@ const assetTypes: Record<string, string> = {
 
 export function createAttentionWeb(options: {
   config: AttentionWebConfig; attention: AttentionService; operations: ReturnType<typeof attentionOperations>;
-  receipts: WebReceipts; push: WebPushService; assets: string; codex?: WebCodexInstances;
+  receipts: WebReceipts; push: WebPushService; assets: string; codex?: WebCodexInstances; attachments?: CodexAttachments;
 }) {
   const { config, attention, operations, receipts, push } = options;
+  const resolveMessage = async (value: unknown, user: string) => {
+    if (options.attachments) return options.attachments.message(value, "web:" + user);
+    if (typeof value !== "string") throw new AttentionError("Attachments are unavailable", 503);
+    return value;
+  };
   const secret = randomBytes(32), streams = new Set<ServerResponse>();
   const csrf = (user: string) => createHmac("sha256", secret).update(user).digest("hex");
   const authorize = (req: IncomingMessage) => {
@@ -75,6 +82,11 @@ export function createAttentionWeb(options: {
     try {
       const user = authorize(req), pathname = (req.url || "").split("?")[0];
       if (req.method !== "GET" && req.method !== "POST") throw new AttentionError("Method not allowed", 405);
+      if (pathname === "/api/attachments" && req.method === "POST") {
+        if (!options.attachments) throw new AttentionError("Attachments are unavailable", 503);
+        const input = await readJson(req, MAX_CODEX_UPLOAD_BODY, 90000);
+        sendJson(res, 200, await options.attachments.upload(input, "web:" + user)); return;
+      }
       if (req.method === "GET" && assetTypes[pathname]) {
         const file = pathname === "/" ? "index.html" : pathname.slice(1);
         const bytes = await fs.readFile(path.join(options.assets, file));
@@ -110,8 +122,8 @@ export function createAttentionWeb(options: {
         if (route[3] === "conversations" && req.method === "GET") { sendJson(res, 200, await messages.conversations(target)); return; }
         if (route[3] !== "messages" || req.method !== "POST") throw new AttentionError("Method not allowed", 405);
         const input = await readJson(req);
-        const receipt = await receipts.run(user, input.requestId, { action: "instance-message", target, value: input.value }, () =>
-          messages.send(target, input.value?.conversationId, input.value?.message));
+        const receipt = await receipts.run(user, input.requestId, { action: "instance-message", target, value: input.value }, async () =>
+          messages.send(target, input.value?.conversationId, await resolveMessage(input.value?.message, user)));
         sendJson(res, 200, receipt); return;
       }
       if (req.method === "POST" && pathname.startsWith("/api/push/")) {
@@ -148,9 +160,10 @@ export function createAttentionWeb(options: {
       }
       if (action === "questions" || req.method !== "POST") throw new AttentionError("Method not allowed", 405);
       const input = await readJson(req);
-      if (action === "state") { await attention.setState(source, id, input.state, input.minutes); sendJson(res, 200, { ok: true }); return; }
-      const receipt = await receipts.run(user, input.requestId, { source, id, action, value: input.value }, () =>
-        action === "answers" ? operations.answer(source, id, input.value) : operations.message(source, id, input.value));
+      if (action === "state") { await attention.setState(source, id, input.state); sendJson(res, 200, { ok: true }); return; }
+      const receipt = await receipts.run(user, input.requestId, { source, id, action, value: input.value }, async () =>
+        action === "answers" ? operations.answer(source, id, input.value) : operations.message(source, id,
+          await resolveMessage(input.value, user)));
       sendJson(res, 200, receipt);
     } catch (error) {
       if (!res.headersSent) sendJson(res, error instanceof AttentionError ? error.status : 500,
@@ -163,7 +176,7 @@ export function createAttentionWeb(options: {
 }
 
 export async function startAttentionWeb(userData: string, assets: string, attention: AttentionService,
-  operations: ReturnType<typeof attentionOperations>, codex?: WebCodexInstances) {
+  operations: ReturnType<typeof attentionOperations>, codex?: WebCodexInstances, attachments?: CodexAttachments) {
   const raw = await readWebStore<any>(path.join(userData, "web-config.json"), null);
   if (!raw || raw.enabled === false) return;
   const config = validateWebConfig(raw);
@@ -171,7 +184,7 @@ export async function startAttentionWeb(userData: string, assets: string, attent
   const push = new WebPushService(path.join(userData, "web-push.json"), config.origin, undefined, config.allowedUsers);
   await push.initialize(attention.list());
   const unsubscribe = attention.onChanged(snapshot => push.update(snapshot));
-  const web = createAttentionWeb({ config, attention, operations, receipts, push, assets, codex });
+  const web = createAttentionWeb({ config, attention, operations, receipts, push, assets, codex, attachments });
   try { await new Promise<void>((resolve, reject) => { web.server.once("error", reject); web.server.listen(config.port, "127.0.0.1", resolve); }); }
   catch (error) { unsubscribe(); push.close(); web.close(); throw error; }
   console.log(`Attention PWA listening on 127.0.0.1:${config.port}; external origin ${config.origin}`);

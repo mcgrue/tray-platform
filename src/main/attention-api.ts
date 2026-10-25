@@ -19,7 +19,7 @@ export function sendJson(res: ServerResponse, status: number, value: unknown): v
   res.end(JSON.stringify(value));
 }
 
-export function readJson(req: IncomingMessage): Promise<any> {
+export function readJson(req: IncomingMessage, maxBytes = MAX_ATTENTION_BODY_BYTES, timeoutMs = 10000): Promise<any> {
   return new Promise((resolve, reject) => {
     let size = 0;
     let settled = false;
@@ -36,7 +36,7 @@ export function readJson(req: IncomingMessage): Promise<any> {
     };
     const onData = (chunk: Buffer) => {
       size += chunk.length;
-      if (size > MAX_ATTENTION_BODY_BYTES) finish(new AttentionError("Request body is too large", 413));
+      if (size > maxBytes) finish(new AttentionError("Request body is too large", 413));
       else chunks.push(chunk);
     };
     const onEnd = () => {
@@ -48,7 +48,7 @@ export function readJson(req: IncomingMessage): Promise<any> {
     };
     const onError = () => finish(new AttentionError("Request body could not be read", 400));
     const onAborted = () => finish(new AttentionError("Request aborted", 400));
-    const timer = setTimeout(() => finish(new AttentionError("Request body timed out", 408)), 10000);
+    const timer = setTimeout(() => finish(new AttentionError("Request body timed out", 408)), timeoutMs);
     timer.unref?.();
     req.on("data", onData); req.on("end", onEnd); req.on("error", onError); req.on("aborted", onAborted);
   });
@@ -84,7 +84,7 @@ export function createAttentionApi(options: {
           sendJson(res, 200, { item });
         } else if (match[3] && req.method === "POST") {
           const input = await readJson(req);
-          await options.attention.setState(source, id, input.state, input.minutes);
+          await options.attention.setState(source, id, input.state);
           sendJson(res, 200, { ok: true });
         } else throw new AttentionError("Method not allowed", 405);
       }

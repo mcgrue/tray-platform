@@ -2,8 +2,8 @@ import { moveNavigationSelection, navigationItems, navigationSelection } from ".
 import { attentionKey } from "./attention-ui";
 import { AttentionItem } from "../shared/attention";
 const item = (id: string, createdAt: number, state: AttentionItem["state"] = "pending"): AttentionItem => ({ id, source: "Robot", title: `Build ${id}`, createdAt, updatedAt: createdAt, state });
-test("chooser excludes completed and snoozed items, newest first, filtering title or source case insensitively", () => {
-  const items = [item("old", 1), item("new", 5), item("done", 6, "done"), item("later", 7, "snoozed")];
+test("chooser excludes completed items, newest first, filtering title or source case insensitively", () => {
+  const items = [item("old", 1), item("new", 5), item("done", 6, "done")];
   expect(navigationItems(items, " ROBOT ").map(entry => entry.id)).toEqual(["new", "old"]);
   expect(navigationItems(items, "build old").map(entry => entry.id)).toEqual(["old"]);
   expect(navigationItems(items, "absent")).toEqual([]);

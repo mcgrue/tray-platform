@@ -1,8 +1,9 @@
 import { CodexInstance, CodexInstanceConversation, CodexInstanceTarget, CodexInstancesSnapshot } from "../shared/codex-instances";
-import { isCodexSessionId, MAX_CODEX_MESSAGE_LENGTH } from "../shared/codex-message";
+import { isCodexSessionId } from "../shared/codex-message";
 import { CodexIpcClient } from "./codex-ipc";
 import { CodexMessageService } from "./codex-message-service";
 import { CodexProjectSessions } from "./codex-project-sessions";
+import { validateCodexMessage } from "./codex-attachments";
 
 type Client = Pick<CodexIpcClient, "connect" | "request" | "close">;
 const key = (target: CodexInstanceTarget, id: string) => JSON.stringify([target.codexPid, target.codexStartedAt, id]);
@@ -32,9 +33,7 @@ export class CodexInstanceMessages {
 
   async send(target: CodexInstanceTarget, conversationId: string, message: unknown) {
     if (conversationId !== "" && !isCodexSessionId(conversationId)) throw new Error("Select a Codex conversation.");
-    if (typeof message !== "string" || !message.trim() || message.length > MAX_CODEX_MESSAGE_LENGTH) {
-      throw new Error(`Enter a message of 1 to ${MAX_CODEX_MESSAGE_LENGTH} characters.`);
-    }
+    validateCodexMessage(message);
     const instance = await this.resolveInstance(target);
     if (!conversationId) {
       const receipt = await this.options.projects.send(instance, "", message);

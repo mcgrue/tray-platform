@@ -78,7 +78,7 @@ export class WebPushService {
     const events: AttentionItem[] = [];
     for (const item of snapshot.items) {
       const old = this.previous.get(this.key(item));
-      if (item.state === "pending" && (!old || (old.state === "snoozed" && (old.snoozedUntil || Infinity) <= Date.now()))) events.push(item);
+      if (item.state === "pending" && !old) events.push(item);
     }
     this.previous = new Map(snapshot.items.map(item => [this.key(item), item]));
     for (const item of events) {

@@ -117,7 +117,7 @@ async function run() {
   // A general chat message must not dismiss the question.
   await evaluate(() => {
     const root = document.querySelector('article:not([hidden]) [data-codex-message]:not([hidden])'); root.open = true;
-    const input = root.querySelector("textarea"); input.value = "General chat, leave the questions open"; input.dispatchEvent(new Event("input")); root.querySelector("button").click();
+    const input = root.querySelector("textarea"); input.value = "General chat, leave the questions open"; input.dispatchEvent(new Event("input")); root.querySelector('button[type="submit"]').click();
   });
   await waitFor("ordinary message completed", () => runtime.completed.size === 1);
   assert.equal(attention.get("codex", id).state, "pending");

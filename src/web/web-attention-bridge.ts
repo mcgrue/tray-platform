@@ -3,6 +3,7 @@ import { CodexMessageReceipt } from "../shared/codex-message";
 import { CodexAnswerReceipt, CodexQuestion, CodexQuestionAnswer } from "../shared/codex-question";
 import { CodexInstanceConversation, CodexInstancesBridge, CodexInstancesSnapshot, CodexInstanceTarget, RecoveredCodexInstanceMessage } from "../shared/codex-instances";
 import { CodexApproval, CodexApprovalDecision, CodexApprovalReceipt } from "../shared/codex-approval";
+import { CodexAttachment, CodexAttachmentUpload, CodexMessageDraft } from "../shared/codex-attachments";
 
 interface Receipt { state: "unknown" | "succeeded"; result?: any; error?: string; }
 export class WebAttentionBridge implements AttentionBridge, CodexInstancesBridge {
@@ -23,8 +24,8 @@ export class WebAttentionBridge implements AttentionBridge, CodexInstancesBridge
     } catch { /* An unavailable store is handled before sending. */ }
   }
   private savePending() { sessionStorage.setItem("tray-pending-deliveries", JSON.stringify([...this.pending])); this.deliveryChanged(); }
-  async request<T = any>(url: string, input?: unknown): Promise<T> {
-    const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 45000);
+  async request<T = any>(url: string, input?: unknown, timeoutMs = 45000): Promise<T> {
+    const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const response = await fetch(url, { method: input === undefined ? "GET" : "POST", cache: "no-store", signal: controller.signal,
         headers: input === undefined ? {} : { "Content-Type": "application/json", "X-Tray-CSRF": this.token },
@@ -70,8 +71,8 @@ export class WebAttentionBridge implements AttentionBridge, CodexInstancesBridge
     this.recovered.add(callback); return () => { this.recovered.delete(callback); };
   }
   private route(source: string, id: string, action: string) { return `/api/attention/${encodeURIComponent(source)}/${encodeURIComponent(id)}/${action}`; }
-  async setAttentionState(source: string, id: string, state: AttentionState, minutes?: number) {
-    await this.request(this.route(source, id, "state"), { state, minutes });
+  async setAttentionState(source: string, id: string, state: AttentionState) {
+    await this.request(this.route(source, id, "state"), { state });
   }
   getAttentionQuestion(source: string, id: string) { return this.request<CodexQuestion[]>(this.route(source, id, "questions")); }
   private async deliver<T>(source: string, id: string, action: string, value: unknown): Promise<T> {
@@ -94,7 +95,8 @@ export class WebAttentionBridge implements AttentionBridge, CodexInstancesBridge
     if (this.pending.get(route) === requestId) { this.pending.delete(route); this.pendingValues.delete(route); this.savePending(); }
     return receipt.result;
   }
-  sendAttentionMessage(source: string, id: string, message: string) { return this.deliver<CodexMessageReceipt>(source, id, "messages", message); }
+  uploadCodexAttachment(upload: CodexAttachmentUpload) { return this.request<CodexAttachment>("/api/attachments", upload, 90000); }
+  sendAttentionMessage(source: string, id: string, message: CodexMessageDraft) { return this.deliver<CodexMessageReceipt>(source, id, "messages", message); }
   answerAttentionQuestion(source: string, id: string, answers: CodexQuestionAnswer[]) { return this.deliver<CodexAnswerReceipt>(source, id, "answers", answers); }
   getAttentionApproval(source: string, id: string) { return this.request<CodexApproval>(this.route(source, id, "approvals")); }
   answerAttentionApproval(source: string, id: string, decision: CodexApprovalDecision) { return this.deliver<CodexApprovalReceipt>(source, id, "approvals", decision); }
@@ -112,7 +114,7 @@ export class WebAttentionBridge implements AttentionBridge, CodexInstancesBridge
   getCodexInstanceConversations(target: CodexInstanceTarget) {
     return this.request<CodexInstanceConversation[]>(this.instanceRoute(target, "conversations"));
   }
-  sendCodexInstanceMessage(target: CodexInstanceTarget, conversationId: string, message: string) {
+  sendCodexInstanceMessage(target: CodexInstanceTarget, conversationId: string, message: CodexMessageDraft) {
     return this.deliverRoute<CodexMessageReceipt>(this.instanceRoute(target, "messages"), { conversationId, message });
   }
   onRecoveredCodexInstanceMessage(callback: (delivery: RecoveredCodexInstanceMessage) => void) {

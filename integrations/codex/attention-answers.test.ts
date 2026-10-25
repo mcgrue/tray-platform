@@ -111,12 +111,11 @@ test("reply parser supports singleton envelopes and rejects malformed or quoted 
   expect(parseReply("<send_user_message_question_reply>{bad}</send_user_message_question_reply>")).toEqual([]);
 });
 
-test("answered snoozed items retain human edits and history; duplicate answers preserve a manual reopen", async () => {
+test("answered items retain human edits and history; duplicate answers preserve a manual reopen", async () => {
   const input = question();
   await invoke(input);
   const id = toAttention(input).id;
   await service.upsert("codex", id, { title: "Human title", destination: { kind: "url", url: "https://example.com" } });
-  await service.setState("codex", id, "snoozed", 5);
   await invoke(reply(input));
   expect(service.get("codex", id)).toMatchObject({ state: "done", title: "Human title", destination: { url: "https://example.com" } });
   const saved = JSON.parse(fs.readFileSync(path.join(root, "attention.json"), "utf8"));

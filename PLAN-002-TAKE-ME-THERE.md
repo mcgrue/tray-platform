@@ -8,7 +8,7 @@ A global shortcut returns the human to work awaiting attention. Depends on Plan 
 
 - Register a configurable Electron global shortcut, default Ctrl+Alt+Space, after app readiness. Persist settings, surface registration conflicts, provide a tray fallback, and unregister on exit.
 - One pending item activates its destination, or shows its details if no destination exists. Several pending items open a compact chooser, newest first, with title/source filtering, arrows, Enter, and Escape. Zero items opens the empty inbox.
-- Exclude Snoozed and Done items; revalidate the selected item before activation. Reuse Plan 001 destination handling and the existing application window. Repeated presses must not create duplicate windows or listeners.
+- Exclude Done items; revalidate the selected item before activation. Reuse Plan 001 destination handling and the existing application window. Repeated presses must not create duplicate windows or listeners.
 - Activation is explicit and does not mark Done. Display activation failures without losing the pending item.
 
 ## Acceptance

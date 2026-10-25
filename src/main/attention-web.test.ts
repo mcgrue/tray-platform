@@ -8,21 +8,24 @@ import { createAttentionWeb, validateWebConfig } from "./attention-web";
 import { WebReceipts } from "./web-receipts";
 import { WebPushService } from "./web-push-service";
 import { CodexApprovalService } from "./codex-approval-service";
+import { CodexAttachments } from "./codex-attachments";
 
 const origin = "https://fixture.ts.net";
 let attention: AttentionService, web: ReturnType<typeof createAttentionWeb>, push: WebPushService, port: number;
 let messages: jest.Mock, answers: jest.Mock;
 let approvals: CodexApprovalService;
+let attachments: CodexAttachments;
 beforeEach(async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "tray-web-api-"));
   attention = new AttentionService(path.join(dir, "attention.json")); await attention.initialize();
   approvals = new CodexApprovalService(attention); await approvals.initialize();
+  attachments = new CodexAttachments(path.join(dir, "attachments")); await attachments.initialize();
   await attention.upsert("codex", "a", { title: "Fixture", codexSessionId: "fixture" });
   const receipts = new WebReceipts(path.join(dir, "receipts.json")); await receipts.initialize();
   push = new WebPushService(path.join(dir, "push.json"), origin, async () => {}, ["owner"]); await push.initialize(attention.list());
   messages = jest.fn(async () => ({ sessionId: "fixture", turnId: "turn", delivery: "started" }));
   answers = jest.fn(async () => ({ remainingQuestions: 1 }));
-  web = createAttentionWeb({ config: { origin, allowedUsers: ["owner"], port: 0 }, attention, receipts, push, assets: path.join(process.cwd(), "src/web"),
+  web = createAttentionWeb({ config: { origin, allowedUsers: ["owner"], port: 0 }, attention, receipts, push, attachments, assets: path.join(process.cwd(), "src/web"),
     operations: { message: messages, answer: answers, questions: async () => [],
       approval: (source: string, id: string) => approvals.get(source, id),
       approve: (source: string, id: string, decision: unknown) => approvals.decide(source, id, decision) } as any });
@@ -57,6 +60,8 @@ test("writes require exact origin, JSON, and CSRF; hooks and native controls are
   expect((await request(route, "POST", data, { ...valid, "Content-Type": "text/plain" })).status).toBe(415);
   expect((await request(route, "POST", data, valid)).status).toBe(200);
   expect(attention.get("codex", "a")?.state).toBe("done");
+  expect((await request(route, "POST", { state: "snoozed", minutes: 5 }, valid)).status).toBe(400);
+  expect(attention.get("codex", "a")?.state).toBe("done");
   for (const route of ["/api/windows", "/api/attention/codex/a/go", "/DOCTEST_ALL_TESTS_PASS", "/../package.json", "/index.js.map"]) expect((await request(route)).status).toBe(404);
   expect((await request("/api/attention/x/y", "PUT", {}, valid)).status).toBe(405);
 });
@@ -87,6 +92,27 @@ test("SSE supplies an initial snapshot and subsequent durable state changes", as
     }); req.on("error", reject);
   });
   expect(snapshots[0].items[0].state).toBe("pending"); expect(snapshots[1].items[0].state).toBe("done");
+});
+
+test("authenticated uploads feed attachment-only messages through durable receipts", async () => {
+  const valid = await headers(), input = { id: randomUUID(), name: "source.ts", mimeType: "text/plain", base64: Buffer.from("const fixture = true;").toString("base64") };
+  for (const override of [{ Origin: "https://evil.test" }, { "X-Tray-CSRF": "" }, { "Tailscale-User-Login": "other" }]) {
+    expect((await request("/api/attachments", "POST", input, { ...valid, ...override } as any)).status).toBe(403);
+  }
+  const uploaded = await request("/api/attachments", "POST", input, valid);
+  expect(uploaded.status).toBe(200); expect(uploaded.body.id).toBe(input.id); expect(uploaded.body.path).toBeUndefined();
+  expect((await request("/api/attachments", "POST", input, valid)).body).toEqual(uploaded.body);
+  const data = { requestId: `${Date.now()}-${randomUUID()}`, value: { text: "", attachmentIds: [input.id] } };
+  const route = "/api/attention/codex/a/messages", sent = await request(route, "POST", data, valid);
+  expect(sent.body.state).toBe("succeeded");
+  expect(messages).toHaveBeenCalledWith("codex", "a", { text: "", attachments: [expect.objectContaining({ id: input.id, name: "source.ts", path: expect.any(String) })] });
+  expect((await request(route, "POST", data, valid)).body).toEqual(sent.body); expect(messages).toHaveBeenCalledTimes(1);
+  expect((await request(`/api/requests/${data.requestId}`)).body).toEqual(sent.body);
+  const privateFile = await attachments.upload({ ...input, id: randomUUID() }, "desktop");
+  const denied = await request(route, "POST", { requestId: `${Date.now()}-${randomUUID()}`, value: { text: "", attachmentIds: [privateFile.id] } }, valid);
+  expect(denied.body.state).toBe("unknown"); expect(messages).toHaveBeenCalledTimes(1);
+  expect((await request(`/attachments/${input.id}.ts`)).status).toBe(404);
+  expect((await request(route, "POST", { requestId: `${Date.now()}-${randomUUID()}`, value: "x".repeat(65536) }, valid)).status).toBe(413);
 });
 
 test("approval decisions require identity and CSRF and preserve one decision across different receipt IDs", async () => {

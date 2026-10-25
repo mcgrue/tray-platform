@@ -35,6 +35,8 @@ test("ephemeral HTTP server creates, lists, updates state, discovers windows, an
   expect(created.status).toBe(200); expect(created.body.item.id).toBe("job 1");
   expect((await request("/api/attention")).body.items).toHaveLength(1);
   expect((await request("/api/attention/build/job%201/state", "POST", '{"state":"done"}')).status).toBe(200);
+  expect((await request("/api/attention/build/job%201/state", "POST", '{"state":"snoozed","minutes":5}')).status).toBe(400);
+  expect(service.get("build", "job 1").state).toBe("done");
   expect((await request("/api/attention/build/job%201", "PUT", '{"title":"Retry"}')).body.item.state).toBe("done");
   expect((await request("/api/windows")).body.windows).toEqual(windows);
   expect(await request("/DOCTEST_ALL_TESTS_PASS")).toEqual({ status: 200, body: "legacy" });

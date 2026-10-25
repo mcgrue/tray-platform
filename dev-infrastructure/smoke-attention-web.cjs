@@ -81,6 +81,11 @@ async function run() {
   await wait("partial answer", () => answered.length === 1); assert.equal(attention.get("codex", "question-fixture").state, "pending");
   assert((await cardState("question-fixture")).expanded, "Answering does not collapse the card");
   await toggleCard(completion);
+  assert.deepEqual(await evaluate(() => [...document.querySelectorAll('nav[aria-label="Attention views"] button')]
+    .map(button => button.textContent.split(" ")[0])), ["Pending", "Done"]);
+  assert.equal(await evaluate(() => [...document.querySelectorAll("[data-card-actions] select, [data-card-actions] button")]
+    .some(node => node.tagName === "SELECT" || /snooze/i.test(node.textContent))), false);
+  assert.equal(await evaluate(() => document.body.textContent.includes("Send to this Codex conversation.")), false);
   const type = text => evaluate(text => { const card = [...document.querySelectorAll("article")].find(card => card.querySelector("h3").textContent.includes("PWA fixture")); const input = card.querySelector("textarea"); input.value = text; input.dispatchEvent(new Event("input", { bubbles: true })); }, text);
   await type("A retained mobile draft");
   await toggleCard(completion);
@@ -107,7 +112,7 @@ async function run() {
   assert((await cardState(completion)).visible && (await cardState("question-fixture")).visible, "Live updates preserve expansion");
   assert.equal((await cardState("question-fixture")).questionDraft, "Retain my second answer");
   assert.equal(await evaluate(() => [...document.querySelectorAll("textarea")].some(input => input.value === "A retained mobile draft")), true);
-  const send = () => evaluate(() => [...document.querySelectorAll("article")].find(card => card.querySelector("h3").textContent.includes("PWA fixture")).querySelector('[data-codex-message] button').click());
+  const send = () => evaluate(() => [...document.querySelectorAll("article")].find(card => card.querySelector("h3").textContent.includes("PWA fixture")).querySelector('[data-codex-message] button[type="submit"]').click());
   await send(); await wait("delivery acknowledged", () => evaluate(() => [...document.querySelectorAll('[data-codex-message] [role="status"]')].some(node => node.textContent.includes("follow-up"))));
   assert.deepEqual(sent, [{ id: completion, text: "A retained mobile draft" }]);
   dropNextMessageResponse = true; await type("Delivered but response lost"); await send();

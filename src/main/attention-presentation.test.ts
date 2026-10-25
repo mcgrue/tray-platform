@@ -76,7 +76,7 @@ test("tray and titlebar keep cycling until all pending work is resolved, includi
   expect(jest.getTimerCount()).toBe(0);
 });
 
-test("multiple arrivals share one signal and snoozing the final pending item stops it", () => {
+test("multiple arrivals share one signal and completing the final pending item stops it", () => {
   const f = fixture(); f.window.isVisible.mockReturnValue(true);
   f.controller.update(snapshot(item("a")));
   f.controller.update(snapshot(item("a"), item("b")));
@@ -84,7 +84,7 @@ test("multiple arrivals share one signal and snoozing the final pending item sto
   expect(jest.getTimerCount()).toBe(1);
   f.controller.update(snapshot(item("a", "done"), item("b")));
   expect(jest.getTimerCount()).toBe(1);
-  f.controller.update(snapshot(item("a", "done"), item("b", "snoozed")));
+  f.controller.update(snapshot(item("a", "done"), item("b", "done")));
   expect(jest.getTimerCount()).toBe(0);
 });
 
@@ -107,13 +107,13 @@ test("focus pauses only native flashing; tray and titlebar keep cycling through 
   expect(f.setTitlebarAlert).toHaveBeenLastCalledWith(3);
 });
 
-test("already focused inbox cycles without native flashing, and an expired snooze resumes the signal", () => {
+test("already focused inbox cycles without native flashing, and reopening an item resumes the signal", () => {
   const f = fixture(); f.window.isVisible.mockReturnValue(true); f.window.isFocused.mockReturnValue(true);
   f.controller.update(snapshot(item("a")));
   expect(f.setTrayAlert).toHaveBeenCalledWith(true);
   expect(f.setTitlebarAlert).toHaveBeenCalledWith(0);
   expect(f.window.flashFrame).not.toHaveBeenCalled();
-  f.controller.update(snapshot(item("a", "snoozed")));
+  f.controller.update(snapshot(item("a", "done")));
   f.window.isFocused.mockReturnValue(false);
   f.controller.update(snapshot(item("a")));
   expect(f.window.flashFrame).toHaveBeenCalledWith(true);
@@ -183,7 +183,7 @@ test("destroyed windows stop their timer without calling native window methods",
 });
 
 test.each(["win32", "linux", "darwin"])("%s stays idle without pending work and cleans up on shutdown", platform => {
-  const f = fixture(snapshot(item("done", "done"), item("later", "snoozed")), platform);
+  const f = fixture(snapshot(item("done", "done"), item("finished", "done")), platform);
   expect(jest.getTimerCount()).toBe(0);
   expect(f.setTitlebarAlert).not.toHaveBeenCalled();
   expect(f.setTrayAlert).not.toHaveBeenCalled();

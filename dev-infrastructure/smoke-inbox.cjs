@@ -92,14 +92,10 @@ async function run() {
   assert.equal(await evaluate(() => document.querySelector("main article") === window.__smokeOriginalCard), true);
   assert.equal(await evaluate(() => document.querySelector("audio") === window.__smokeOriginalAudio), true, "Audio node survives snapshots");
 
-  await click("Smoke build updated", "Snooze");
-  await waitFor("snooze persisted", () => hasState("snoozed"));
-  await tab("Snoozed");
-  await waitFor("snoozed view", () => visible("Smoke build updated"));
-  await click("Smoke build updated", "Reopen");
-  await waitFor("reopen persisted", () => hasState("pending"));
-  await tab("Pending");
-  await waitFor("pending view", () => visible("Smoke build updated"));
+  assert.deepEqual(await evaluate(() => [...document.querySelectorAll('nav[aria-label="Attention views"] button')]
+    .map(button => button.textContent.split(" ")[0])), ["Pending", "Done"]);
+  assert.equal(await evaluate(() => [...document.querySelectorAll("[data-card-actions] select, [data-card-actions] button")]
+    .some(node => node.tagName === "SELECT" || /snooze/i.test(node.textContent))), false, "No deferred-action controls remain");
   await click("Smoke build updated", "Done");
   await waitFor("done persisted", () => hasState("done"));
   await tab("Done");
@@ -140,7 +136,7 @@ async function run() {
   assert.equal(await evaluate(() => document.querySelectorAll("#soundboard").length), 1);
   assert.equal(attention.list().items.length, 3);
   assert(fs.existsSync(path.join(dataPath, "attention.json")), "Durable store exists");
-  console.log("PASS: inbox DOM, idempotent HTTP events, audio preservation, Go, snooze, Done/Reopen, destination errors/editor removal, and reload persistence");
+  console.log("PASS: inbox DOM, idempotent HTTP events, audio preservation, Go, Pending/Done only, Done/Reopen, destination errors/editor removal, and reload persistence");
 }
 
 let failed = false;

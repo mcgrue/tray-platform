@@ -29,6 +29,25 @@ test("sends literal multiline Unicode input only to the discovered conversation 
   expect(item.state).toBe("pending");
 });
 
+test.each([false, true])("delivers file and image input with matching restore metadata (idle=%s)", async idle => {
+  const { client, service } = fixture([idle ? { result: { turn: { id: "new" } } } : { result: { turnId: "active" } }]);
+  if (idle) {
+    const normal = client.request.getMockImplementation()!;
+    client.request.mockImplementation(async (...args) => args[0] === "thread-follower-steer-turn" ?
+      { resultType: "error", error: "Cannot steer conversation session-a because its active turn already ended" } : normal(...args));
+  }
+  const file = { id: "one", name: "source.ts", path: path.resolve("source.ts"), size: 20, mimeType: "application/octet-stream", image: false };
+  const image = { ...file, id: "two", name: "screen.png", path: path.resolve("screen.png"), mimeType: "image/png", image: true };
+  const receipt = await service.send(item, { text: "", attachments: [file, image] });
+  expect(receipt.delivery).toBe(idle ? "started" : "steered");
+  const steer = client.request.mock.calls[1][1];
+  expect(steer.input[1]).toEqual({ type: "localImage", path: image.path });
+  expect(steer.input[0].text).toContain("source.ts");
+  expect(steer.restoreMessage.context.fileAttachments).toEqual([{ label: file.name, path: file.path, fsPath: file.path }]);
+  expect(steer.restoreMessage.context.imageAttachments[0].localPath).toBe(image.path);
+  if (idle) expect(client.request.mock.calls[2][1].turnStart.request.input).toEqual(steer.input);
+});
+
 test("starts a follow-up only after explicit inactive-turn rejection, retaining settings and message identity", async () => {
   const { client, service } = fixture([{ result: { turn: { id: "new-turn" } } }]);
   const normal = client.request.getMockImplementation()!;

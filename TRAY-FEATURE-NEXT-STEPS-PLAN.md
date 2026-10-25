@@ -38,7 +38,7 @@ the user's scroll position or replacing drafts.
 
 ## 3. Inbox search and project filters
 
-The inbox currently filters by Pending/Snoozed/Done. Add project and text filters
+The inbox currently filters by Pending/Done. Add project and text filters
 with visible result counts, preserving them across updates and tab switches.
 Notification links must still reveal their target even when it is filtered out.
 This is the smallest independent feature if remote approvals are not a priority.

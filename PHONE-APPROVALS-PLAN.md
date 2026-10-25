@@ -17,7 +17,7 @@ approvals from Tray-managed Codex conversations, shared between desktop and PWA.
   send at most one decision, with no reconnect replay.
 - Expose guarded IPC and authenticated PWA routes with existing delivery receipts.
   Reserve approval-source writes from the generic attention API. Pending approvals
-  cannot be dismissed with Done or Snooze.
+  cannot be dismissed with Done.
 - Keep cards compatible with collapsed phone UI and notification expansion.
 
 ## Validation

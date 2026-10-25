@@ -4,6 +4,7 @@ import { CodexInstance, CodexInstanceConversation, ProcessDescriptor } from "../
 import { CodexMessageReceipt, isCodexSessionId } from "../shared/codex-message";
 import { CodexAppServer, CodexRpc, CodexServerRequestContext } from "./codex-app-server";
 import { findCodexProcesses } from "./codex-discovery";
+import { CodexMessage, codexMessageParts, validateCodexMessage } from "./codex-attachments";
 
 const identity = (instance: CodexInstance) => JSON.stringify([instance.codexPid, instance.codexStartedAt]);
 const normalized = (value: string) => value.replace(/^\\\\\?\\/, "").replace(/\\/g, "/").replace(/\/$/, "").toLowerCase();
@@ -50,7 +51,8 @@ export class CodexProjectSessions {
     return rows;
   }
 
-  async send(instance: CodexInstance, sessionId: string, message: string): Promise<CodexMessageReceipt> {
+  async send(instance: CodexInstance, sessionId: string, message: CodexMessage): Promise<CodexMessageReceipt> {
+    validateCodexMessage(message);
     const lock = sessionId || identity(instance);
     if (this.sending.has(lock)) throw new Error("A message is already being sent to this Codex conversation.");
     this.sending.add(lock);
@@ -77,7 +79,7 @@ export class CodexProjectSessions {
     } finally { this.sending.delete(lock); }
   }
 
-  async sendExisting(sessionId: string, message: string): Promise<CodexMessageReceipt> {
+  async sendExisting(sessionId: string, message: CodexMessage): Promise<CodexMessageReceipt> {
     const runtime = this.sessions.get(sessionId);
     if (!runtime) throw new Error("This project conversation is no longer running in Tray Platform.");
     return this.send(runtime.instance, sessionId, message);
@@ -89,8 +91,8 @@ export class CodexProjectSessions {
     this.runtimes.clear(); this.sessions.clear();
   }
 
-  private async deliver(runtime: Runtime, sessionId: string, message: string): Promise<CodexMessageReceipt> {
-    const input = [{ type: "text", text: message, text_elements: [] }];
+  private async deliver(runtime: Runtime, sessionId: string, message: CodexMessage): Promise<CodexMessageReceipt> {
+    const { input } = codexMessageParts(message);
     const active = runtime.turns.get(sessionId);
     if (active) {
       const result = await runtime.client.request("turn/steer", { threadId: sessionId, input, expectedTurnId: active });

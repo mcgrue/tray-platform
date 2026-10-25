@@ -6,7 +6,7 @@ async function createMessageRuntime(root, cli) {
   const home = path.join(root, "codex-home"), cwd = path.join(root, "project");
   fs.mkdirSync(home); fs.mkdirSync(cwd);
   let count = 0, holdNext = false, release, activeTurn;
-  const requests = [], completed = new Set(), pending = new Map();
+  const requests = [], completed = new Set(), pending = new Map(), listeners = new Set();
   const provider = http.createServer(async (req, res) => {
     let body = ""; for await (const bytes of req) body += bytes;
     if (req.method !== "POST") { res.writeHead(404); res.end(); return; }
@@ -40,6 +40,7 @@ async function createMessageRuntime(root, cli) {
   readline.createInterface({ input: child.stdout }).on("line", line => {
     let message; try { message = JSON.parse(line); } catch { return; }
     fs.appendFileSync(path.join(root, "runtime-protocol.jsonl"), line + "\n");
+    if (message.method) for (const listener of listeners) listener(message.method, message.params);
     if (message.method === "turn/completed") { completed.add(message.params.turn.id); if (activeTurn === message.params.turn.id) activeTurn = undefined; }
     const entry = !message.method && pending.get(message.id);
     if (entry) { pending.delete(message.id); clearTimeout(entry.timer); message.error ? entry.reject(new Error(message.error.message)) : entry.resolve(message.result); }
@@ -55,7 +56,8 @@ async function createMessageRuntime(root, cli) {
     child.stdin.write(JSON.stringify({ method: "initialized", params: {} }) + "\n");
     const started = await rpc("thread/start", { cwd, model: "gpt-6.1-sol", modelProvider: "fixture", approvalPolicy: "never", sandbox: "read-only", ephemeral: true, baseInstructions: "Deterministic message fixture." });
     const sessionId = started.thread.id;
-    return { sessionId, requests, completed, close,
+    return { sessionId, requests, completed, close, cwd, rpc,
+      onNotification(listener) { listeners.add(listener); return () => listeners.delete(listener); },
       holdNextResponse() { holdNext = true; }, releaseResponse() { release?.(); release = undefined; },
       async send(method, params) {
         if (params.conversationId !== sessionId) throw new Error("Wrong conversation");

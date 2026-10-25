@@ -42,16 +42,19 @@ color overrides, focus-event updates, title changes, reloads, and close-to-tray.
 Run `yarn start` (or `yarn dev` for the existing watch workflow). The attention
 inbox opens on startup. Minimizing keeps it in the taskbar for normal restoration
 and focus. Double-click the tray icon to open or focus it, or use the tray menu.
-Pending items support Go, Snooze, and Done; history supports
+Pending items support Go and Done; history supports
 Reopen. Closing the window keeps the tray process running; use its Quit command
 to exit. Data is stored in `attention.json` in Electron's user-data directory.
+Only Pending and Done states are supported. On upgrade, previously snoozed items
+return to Pending without replaying sounds or push notifications. Their content
+and timestamps are retained, and the store is migrated atomically to version 2.
 
 While any inbox items are pending, the titlebar cycles amber, purple, and teal
 once per second and the tray icon alternates its normal and alert images.
 This continues when the window is focused, hidden, minimized, or reloaded, and
 starts for saved pending items when the app launches. Windows/Linux additionally
 request taskbar attention while unfocused; macOS uses a critical Dock bounce
-while unfocused and resumes it when focus leaves. Resolving or snoozing the last
+while unfocused and resumes it when focus leaves. Resolving the last
 pending item stops the signal and restores the configured titlebar and tray icon.
 
 New pending work still opens a hidden or minimized inbox on its Pending view
@@ -79,13 +82,13 @@ $item = @{
 Invoke-RestMethod 'http://localhost:22222/api/attention/build/run-123' -Method Put -ContentType 'application/json' -Body $item
 ```
 
-The source/id pair deduplicates retries. Updating it preserves Done/Snoozed
+The source/id pair deduplicates retries. Updating it preserves Pending/Done
 state and does not replay sound; use a new ID for a new request. Sound values
 are IDs in `src/shared/sounds.json`, such as `fanfare`, `fail`, and `icq`.
 
 - `GET /api/attention`: `{ items, error? }` snapshot.
 - `PUT /api/attention/:source/:id`: create/update; returns `{ item }`.
-- `POST /api/attention/:source/:id/state`: `{ state, minutes? }`; snooze accepts 5, 15, or 60 minutes.
+- `POST /api/attention/:source/:id/state`: `{ state }`; accepts `pending` or `done`.
 - `GET /api/windows`: `{ windows }`; copy a complete window descriptor into an item's `destination`.
 
 New API routes accept loopback callers without a browser Origin header. Existing
@@ -140,6 +143,50 @@ against the installed runtime with isolated history and a local fixture provider
 The background runtime uses the documented
 [Codex app-server protocol](https://learn.chatgpt.com/docs/app-server).
 
+### Message attachments
+
+The Attention Inbox and Codex Instances composers support files and images on
+desktop and phone. Choose the **paperclip** button, drop files onto the composer,
+or paste an image. Images appear as small thumbnails; other files use file icons. Click an attachment
+for a larger preview with filename and size overlays. The top-right **trash**
+button removes that attachment; the **red X** beside it closes the preview.
+Escape or clicking outside also closes the preview.
+Text/source files show a bounded text preview; other files show a file icon.
+A message can contain attachments without text, including when starting
+a new conversation. PNG, JPEG, GIF, and WebP images are sent as image input;
+other formats are sent as local file references for Codex to read.
+
+The paperclip and send controls share a row on the right. Exceeding the file-count,
+individual-size, or total-size limit shows a dismissible toast with the limits;
+the existing draft stays intact. Toasts disappear after eight seconds and pause
+while hovered or focused.
+
+Each message accepts up to five files, 10 MiB per file and 20 MiB total. Files are
+uploaded when you send and stored as copies under `attachments/` in Tray Platform's
+user-data directory. Codex receives those copies, not the original selected files.
+Uploads require the desktop inbox or an authenticated phone session; phone uploads
+retain the existing origin and CSRF checks. Attachment IDs are bound to the uploader.
+
+Attachment drafts survive live updates, tab/instance switches, and failed sends.
+Successful delivery clears the draft; **Check delivery** can confirm a lost phone
+response without resending. Drafts are in memory and are lost on page/app reload.
+Uploaded copies remain available for conversation references, even after removing
+a file from a draft; nothing is deleted automatically. Retained storage is limited
+to 512 MiB or 5,000 attachments. File contents are not placed in browser storage,
+web caches, delivery receipts, or push notifications.
+
+After building, set `CODEX_CLI` to the installed `codex.exe`, clear
+`ELECTRON_RUN_AS_NODE`, and run
+`yarn electron dev-infrastructure/smoke-codex-attachments.cjs`. It checks both
+composers through desktop IPC and authenticated phone HTTP, new/idle/active turns,
+image input in the installed runtime, file copies, draft retention, upload errors,
+and lost-response recovery with an isolated localhost provider. Physical phone
+file selection and clipboard access require a separate manual check.
+
+`yarn electron dev-infrastructure/smoke-codex-attachment-preview.cjs` checks the
+icon strip, preview overlays, removal, keyboard/backdrop dismissal, reconnect
+state, inert source previews, and narrow layouts without a Codex runtime.
+
 ### Phone approvals
 
 For Tray-managed conversations, expand an **Approval required** inbox card on
@@ -154,7 +201,7 @@ and expands its card. Offline controls are disabled. If a response is lost,
 **Check delivery** recovers its durable receipt without resending; **Check approval
 status** refreshes the card. Canceled requests, ended turns, runtime exits, and
 Tray restarts make old cards non-actionable. Unknown delivery means check the
-conversation; it does not mean execution succeeded. **Done**, **Snooze**, and
+conversation; it does not mean execution succeeded. **Done** and
 **Reopen** cannot bypass approval controls.
 
 After building, `yarn electron dev-infrastructure/smoke-codex-approvals.cjs` checks
@@ -241,7 +288,7 @@ and [hook configuration and trust](https://learn.chatgpt.com/docs/hooks) documen
 
 On Windows, **Codex done** completion notices show a **New instruction** field
 directly on the card, including in the Done tab. Type the next instruction and
-click **Send instruction** or press **Ctrl+Enter**. Other Codex attention items
+click the **>** send button or press **Ctrl+Enter**. Other Codex attention items
 offer the same delivery through **Message Codex** and **Send message**. It targets
 that item's conversation, steers an active turn, or starts a follow-up when idle.
 The completion dismissal hook acknowledges earlier completion notices when Codex
@@ -286,7 +333,7 @@ The `Stop` hook also creates **Codex done: <project>** when the agent finishes a
 turn, with its final response, project, session, and originating window. Each
 session/turn gets one pending item and one ICQ sound; retries preserve human
 edits and Done state. Sending a message in the same conversation automatically
-moves its earlier completion entries (including snoozed ones) to **Done**. The
+moves its earlier pending completion entries to **Done**. The
 new turn's result still creates its own pending entry. Viewing/focusing VS Code
 does not acknowledge results; you can also use **Done** manually. Completion does
 not resolve unanswered questions. Tool completion, interruption, session exit,
@@ -396,7 +443,7 @@ separate temporary user-data directory; the live inbox is not used.
 ## Android attention PWA over Tailscale
 
 The phone has **Attention Inbox** and **Codex Instances** tabs. The inbox supports
-Pending/Snoozed/Done, question answers, and Codex instructions. Inbox cards start
+Pending/Done, question answers, and Codex instructions. Inbox cards start
 collapsed to their title row; tap it to reveal the content and actions. Expansion
 and drafts survive tab switches and live updates. Opening a notification expands
 its target card. The instance tab
@@ -478,8 +525,8 @@ Notifications contain the project and item title. Opening one requires Tailscale
 Android/browser notification permissions and battery settings affect delivery.
 
 `web-push.json` stores the stable private VAPID key and device subscriptions;
-keep this file private and preserve it across updates. New pending items and
-snooze expiry trigger pushes. Startup does not replay the existing backlog.
+keep this file private and preserve it across updates. New pending items trigger
+pushes. Startup and manual reopening do not replay the existing backlog.
 Pushes expire after five minutes, retry transient failures up to three attempts,
 and expired subscriptions are retired. No background delivery is possible while
 the desktop app is stopped. Use **Disable on this phone** to unsubscribe.
@@ -521,7 +568,7 @@ and [Web Push notifications](https://support.mozilla.org/en-US/kb/push-notificat
 
 Press `Ctrl+Alt+Space`, or choose **Take me there** in the tray menu. One pending
 item opens its destination; several show a chooser. Filter by title/source,
-use arrows to select, Enter to go, and Escape to close. Snoozed and Done items
+use arrows to select, Enter to go, and Escape to close. Done items
 are excluded. Going to work keeps it pending until you explicitly mark Done.
 
 Change the binding under **Keyboard shortcuts** in the application. Requested

@@ -8,9 +8,8 @@ function item(id: string, createdAt: number, state: AttentionItem["state"] = "pe
 describe("attention inbox presentation", () => {
   test("filters each disposition and orders by creation rather than robot updates without mutating the snapshot", () => {
     const older = { ...item("older", 1), updatedAt: 500 };
-    const items = [older, item("done", 4, "done"), item("newer", 3), item("sleeping", 2, "snoozed")];
+    const items = [older, item("done", 4, "done"), item("newer", 3)];
     expect(visibleAttentionItems(items, "pending").map(entry => entry.id)).toEqual(["newer", "older"]);
-    expect(visibleAttentionItems(items, "snoozed").map(entry => entry.id)).toEqual(["sleeping"]);
     expect(visibleAttentionItems(items, "done").map(entry => entry.id)).toEqual(["done"]);
     expect(items[0]).toBe(older);
   });

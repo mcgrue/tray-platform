@@ -28,7 +28,7 @@ const card = (window, id, action, decision) => evaluate(window, (id, action, dec
     allowDisabled: node.querySelector('[data-approval-decision="accept"]')?.matches(":disabled"),
     allowHidden: node.querySelector('[data-approval-decision="accept"]')?.hidden,
     html: Boolean(node.querySelector("[data-approval-preview] img, [data-approval-preview] script")),
-    ordinary: [...node.querySelectorAll("[data-card-actions] button")].filter(button => !button.hidden && /^(Done|Snooze|Reopen)$/.test(button.textContent)).length };
+    ordinary: [...node.querySelectorAll("[data-card-actions] button")].filter(button => !button.hidden && /^(Done|Reopen)$/.test(button.textContent)).length };
 }, id, action, decision);
 const view = (window, state) => evaluate(window, state => [...document.querySelectorAll('nav[aria-label="Attention views"] button')].find(button => button.textContent.toLowerCase().startsWith(state)).click(), state);
 async function screenshot(window, name) {
@@ -91,6 +91,7 @@ async function run() {
   await wait("notification expands approval", async () => (await card(phone, command.id)).collapsed === false);
   await wait("notification reconnect authorized", () => evaluate(phone, () => !document.querySelector("#online-controls").disabled));
   for (const window of [desktop, phone]) {
+    await wait("approval controls ready", async () => (await card(window, command.id)).allowDisabled === false);
     const state = await card(window, command.id); assert(state.details.includes('café <img src=x onerror=alert(1)>'));
     assert.equal(state.html, false); assert.equal(state.ordinary, 0); assert.equal(state.allowDisabled, false);
   }

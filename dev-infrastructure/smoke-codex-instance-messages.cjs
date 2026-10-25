@@ -87,8 +87,8 @@ async function run() {
   const read = () => evaluate(() => {
     const panel = document.querySelector("[data-codex-instance-composer]");
     return { hidden: panel.hidden, text: panel.querySelector("textarea").value, selected: panel.querySelector("select").value,
-      disabled: panel.querySelector('[type="submit"]').disabled, status: panel.querySelector('[role="status"]').textContent,
-      error: panel.querySelector('[role="alert"]').textContent, choices: panel.querySelector("select").options.length };
+      disabled: panel.querySelector('[type="submit"]').disabled, status: panel.querySelector(':scope > form > [role="status"]').textContent,
+      error: panel.querySelector(':scope > form > [role="alert"]').textContent, choices: panel.querySelector("select").options.length };
   });
   const type = text => evaluate(text => { const input = document.querySelector("[data-codex-instance-composer] textarea"); input.value = text; input.dispatchEvent(new Event("input", { bubbles: true })); }, text);
   const send = () => evaluate(() => document.querySelector('[data-codex-instance-composer] [type="submit"]').click());

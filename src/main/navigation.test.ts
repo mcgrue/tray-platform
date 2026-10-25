@@ -7,7 +7,7 @@ function item(id: string, createdAt: number, state: AttentionItem["state"] = "pe
 
 test("zero pending items yields the empty inbox", () => {
   expect(navigationDecision([])).toEqual({ kind: "empty" });
-  expect(navigationDecision([item("done", 100, "done"), item("snoozed", 200, "snoozed")])).toEqual({ kind: "empty" });
+  expect(navigationDecision([item("done", 100, "done"), item("finished", 200, "done")])).toEqual({ kind: "empty" });
 });
 test("one pending item yields that item regardless of destination", () => {
   const pending = item("pending", 100);

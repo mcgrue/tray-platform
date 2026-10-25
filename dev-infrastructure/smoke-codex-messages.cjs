@@ -66,10 +66,10 @@ async function run() {
   assert.equal(await evaluate(() => document.querySelectorAll('[data-codex-message]:not([hidden])').length), 1, "Other sources have no composer");
   const read = () => evaluate(() => {
     const root = document.querySelector('[data-codex-message]:not([hidden])');
-    return { value: root.querySelector("textarea").value, disabled: root.querySelector("button").disabled, status: root.querySelector('[role="status"]').textContent, error: root.querySelector('[role="alert"]').textContent };
+    return { value: root.querySelector("textarea").value, disabled: root.querySelector('button[type="submit"]').disabled, status: root.querySelector(':scope > form > [role="status"]').textContent, error: root.querySelector(':scope > form > [role="alert"]').textContent };
   });
   const type = text => evaluate(text => { const root = document.querySelector('[data-codex-message]:not([hidden])'); root.open = true; const input = root.querySelector("textarea"); input.value = text; input.dispatchEvent(new Event("input", { bubbles: true })); }, text);
-  const send = () => evaluate(() => document.querySelector('[data-codex-message]:not([hidden]) button').click());
+  const send = () => evaluate(() => document.querySelector('[data-codex-message]:not([hidden]) button[type="submit"]').click());
   assert.equal((await read()).disabled, true);
   const first = 'Literal café 🙂\n<script>not markup</script> $(literal)';
   await type(first);

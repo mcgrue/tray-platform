@@ -1,8 +1,10 @@
 import { CodexInstance, CodexInstanceConversation, CodexInstancesBridge, CodexInstancesSnapshot } from "../shared/codex-instances";
 import { CodexMessageReceipt, MAX_CODEX_MESSAGE_LENGTH } from "../shared/codex-message";
+import { sameMessageDraft } from "../shared/codex-attachments";
+import { AttachmentDraft, attachmentMessage, mountCodexAttachmentsUI, newAttachmentDraft } from "./codex-attachments-ui";
 
 interface Draft {
-  instance: CodexInstance; conversations: CodexInstanceConversation[]; conversationId: string; text: string;
+  instance: CodexInstance; conversations: CodexInstanceConversation[]; conversationId: string; text: string; attachments: AttachmentDraft;
   loading: boolean; sending: boolean; sendRevision: number; available: boolean; loaded: boolean; selectionMissing: boolean; status: string; error: string;
 }
 const identity = (row: CodexInstance) => JSON.stringify([row.codexPid, row.codexStartedAt]);
@@ -30,13 +32,18 @@ export function mountCodexInstanceComposer(root: HTMLElement, bridge: CodexInsta
   const close = document.createElement("button"); close.type = "button"; close.textContent = "Close";
   const status = document.createElement("p"); status.setAttribute("role", "status");
   const error = document.createElement("p"); error.setAttribute("role", "alert");
-  form.append(conversationLabel, refresh, messageLabel, hint, send, close, status, error);
+  const attachmentRoot = document.createElement("section");
+  const actions = document.createElement("div"); actions.dataset.composerActions = "";
+  close.dataset.composerClose = ""; actions.append(close, send);
+  form.append(conversationLabel, refresh, messageLabel, attachmentRoot, hint, actions, status, error);
   root.append(heading, context, form);
+  const attachmentUI = mountCodexAttachmentsUI(attachmentRoot, form, bridge, () => active?.attachments, refreshUI);
+  actions.insertBefore(attachmentUI.button, send);
   const unsubscribeRecovered = bridge.onRecoveredCodexInstanceMessage?.(delivery => {
     const draft = drafts.get(JSON.stringify([delivery.target.codexPid, delivery.target.codexStartedAt]));
     if (!draft || disposed) return;
     draft.sendRevision++; draft.sending = false;
-    if (delivery.message !== undefined && draft.text === delivery.message && draft.conversationId === delivery.conversationId) {
+    if (delivery.message !== undefined && sameMessageDraft(delivery.message, attachmentMessage(draft.text, draft.attachments)) && draft.conversationId === delivery.conversationId) {
       acknowledge(draft, delivery.receipt);
     } else {
       draft.error = ""; draft.status = "Previous message delivery confirmed. Your current draft is preserved.";
@@ -70,7 +77,8 @@ export function mountCodexInstanceComposer(root: HTMLElement, bridge: CodexInsta
     select.disabled = busy || !draft.available;
     input.disabled = draft.sending || !draft.available;
     refresh.disabled = busy || !draft.available;
-    send.disabled = busy || !draft.available || draft.selectionMissing || !draft.text.trim();
+    send.disabled = busy || !draft.available || draft.selectionMissing || (!draft.text.trim() && !draft.attachments.files.length);
+    attachmentUI.refresh(draft.sending || !draft.available);
     send.textContent = draft.sending ? "Sending…" : "Send message";
     status.textContent = draft.status;
     error.textContent = draft.available ? draft.error : "This Codex instance has closed or restarted. Your draft is preserved.";
@@ -104,7 +112,8 @@ export function mountCodexInstanceComposer(root: HTMLElement, bridge: CodexInsta
     const revision = ++draft.sendRevision;
     draft.sending = true; draft.error = ""; draft.status = "Sending to Codex…"; refreshUI();
     try {
-      const receipt = await bridge.sendCodexInstanceMessage(target(draft.instance), draft.conversationId, draft.text);
+      await attachmentUI.upload(draft.attachments);
+      const receipt = await bridge.sendCodexInstanceMessage(target(draft.instance), draft.conversationId, attachmentMessage(draft.text, draft.attachments));
       if (disposed || draft.sendRevision !== revision) return;
       acknowledge(draft, receipt);
     } catch (reason) { if (draft.sendRevision === revision) { draft.error = errorText(reason); draft.status = ""; } }
@@ -117,11 +126,11 @@ export function mountCodexInstanceComposer(root: HTMLElement, bridge: CodexInsta
   function acknowledge(draft: Draft, receipt: CodexMessageReceipt) {
     const creating = !draft.conversationId;
     if (creating) {
-      draft.conversations.unshift({ id: receipt.sessionId, title: draft.text.slice(0, 100), lastActiveAt: Date.now() });
+      draft.conversations.unshift({ id: receipt.sessionId, title: draft.text.slice(0, 100) || draft.attachments.files[0]?.file.name || "Attachments", lastActiveAt: Date.now() });
       draft.conversationId = receipt.sessionId;
       if (active === draft) renderChoices();
     }
-    draft.text = ""; draft.error = "";
+    draft.text = ""; draft.error = ""; draft.attachments = newAttachmentDraft();
     draft.status = creating ? "New conversation started. The response will appear in the Attention Inbox."
       : receipt.delivery === "steered" ? "Sent to the active Codex turn." : "Sent to Codex as a follow-up.";
     if (active === draft) { input.value = ""; refreshUI(); }
@@ -139,7 +148,7 @@ export function mountCodexInstanceComposer(root: HTMLElement, bridge: CodexInsta
       if (disposed) return;
       const id = identity(instance);
       let draft = drafts.get(id);
-      if (!draft) { draft = { instance, conversations: [], conversationId: "", text: "", loading: false, sending: false, sendRevision: 0,
+      if (!draft) { draft = { instance, conversations: [], conversationId: "", text: "", attachments: newAttachmentDraft(), loading: false, sending: false, sendRevision: 0,
         available: true, loaded: false, selectionMissing: false, status: "", error: "" }; drafts.set(id, draft); }
       draft.instance = instance; draft.available = true; active = draft;
       root.hidden = false; input.value = draft.text; renderChoices(); refreshUI();
@@ -153,6 +162,6 @@ export function mountCodexInstanceComposer(root: HTMLElement, bridge: CodexInsta
       }
       refreshUI();
     },
-    dispose() { disposed = true; unsubscribeRecovered?.(); drafts.clear(); root.replaceChildren(); },
+    dispose() { disposed = true; unsubscribeRecovered?.(); attachmentUI.dispose(); drafts.clear(); root.replaceChildren(); },
   };
 }

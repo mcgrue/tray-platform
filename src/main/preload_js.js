@@ -7,6 +7,7 @@ function subscribe(channel, callback) {
 }
 
 contextBridge.exposeInMainWorld("ipcComms", {
+  uploadCodexAttachment: (upload) => ipcRenderer.invoke("codex-attachment-upload", upload),
   getCodexInstances: () => ipcRenderer.invoke("codex-instances-list"),
   refreshCodexInstances: () => ipcRenderer.invoke("codex-instances-refresh"),
   onCodexInstancesChanged: (callback) => subscribe("codex-instances-changed", callback),
@@ -28,7 +29,7 @@ contextBridge.exposeInMainWorld("ipcComms", {
   onShortcutsChanged: (callback) => subscribe("shortcuts-changed", callback),
   onShowNavigation: (callback) => subscribe("navigation-show", callback),
   getAttention: () => ipcRenderer.invoke("attention-list"),
-  setAttentionState: (source, id, state, minutes) => ipcRenderer.invoke("attention-state", source, id, state, minutes),
+  setAttentionState: (source, id, state) => ipcRenderer.invoke("attention-state", source, id, state),
   goToAttention: (source, id) => ipcRenderer.invoke("attention-go", source, id),
   sendAttentionMessage: (source, id, message) => ipcRenderer.invoke("attention-message", source, id, message),
   getAttentionQuestion: (source, id) => ipcRenderer.invoke("attention-question", source, id),

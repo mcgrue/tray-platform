@@ -141,7 +141,10 @@ async function run() {
   assert.equal(reveals, 3);
   await noFocus("minimized arrival");
   await waitFor("restored titlebar is rendered", hasAlertColor);
-  const screenshot = await mainWindow.webContents.capturePage();
+  let screenshot;
+  await waitFor("restored compositor frame", async () => {
+    screenshot = await mainWindow.webContents.capturePage(); return !screenshot.isEmpty();
+  });
   assert(!screenshot.isEmpty(), "Restored inbox screenshot contains pixels");
   fs.writeFileSync(path.join(dataPath, "inbox.png"), screenshot.toPNG());
   fs.writeFileSync(path.join(dataPath, "tray-alert.png"), images[0]);
@@ -156,7 +159,7 @@ async function run() {
   await noFocus();
   for (const id of ["first", "third", "fourth"]) await attention.setState("smoke", id, "done");
   assert.equal(flashes[flashes.length - 1], true, "Last pending item still signals");
-  await attention.setState("smoke", "fifth", "snoozed", 5);
+  await attention.setState("smoke", "fifth", "done");
   await waitFor("no pending items restores titlebar", async () => {
     const state = await titlebar();
     return state.color === "#4b5320" && state.renderedColor === rgb(state.color) && state.renderedText === rgb("#ffffff");
@@ -179,7 +182,7 @@ async function run() {
   assert.deepEqual(explicit, ["show", "focus"]);
   assert.equal(mainWindow.isVisible(), true);
   mainWindow.hide();
-  console.log("PASS: saved and new pending items cycle rendered/native titlebar colors and tray images; focus/hide/reload preserve signals; native attention pauses on focus; last pending item snoozed restores idle appearance; hidden/minimized arrivals open inactive; no OS focus change.");
+  console.log("PASS: saved and new pending items cycle rendered/native titlebar colors and tray images; focus/hide/reload preserve signals; native attention pauses on focus; completing last pending item restores idle appearance; hidden/minimized arrivals open inactive; no OS focus change.");
   console.log(JSON.stringify({ dataPath, reveals, activations, trayFrames: images.length, overlays: overlays.length, flashes }));
 }
 

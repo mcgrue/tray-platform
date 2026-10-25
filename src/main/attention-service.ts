@@ -93,22 +93,24 @@ function validateApproval(value: unknown): CodexApproval {
     ...(approval.notice ? { notice: text(approval.notice, "approval notice", 2000) } : {}) };
 }
 
-function validateStore(value: unknown): AttentionItem[] {
+function validateStore(value: unknown): { items: AttentionItem[]; migrated: boolean } {
   const store = object(value);
-  if (store.version !== 1) throw new Error("Unsupported attention store version");
+  if (store.version !== 1 && store.version !== 2) throw new Error("Unsupported attention store version");
   if (!Array.isArray(store.items)) throw new Error("Invalid attention store items");
   const identities = new Set<string>();
-  return store.items.map((value: unknown) => {
+  const items = store.items.map((value: unknown) => {
     const item = object(value);
     validateAttentionIdentity(item.source, item.id);
     const identity = JSON.stringify([item.source, item.id]);
     if (identities.has(identity)) throw new Error("Duplicate attention identity");
     identities.add(identity);
-    if (!["pending", "snoozed", "done"].includes(item.state)) throw new Error("Invalid attention state");
+    // Upgrade legacy deferred items once; no timers or deferred state remain at runtime.
+    const state = store.version === 1 && item.state === "snoozed" ? "pending" : item.state;
+    if (!["pending", "done"].includes(state)) throw new Error("Invalid attention state");
     if (![item.createdAt, item.updatedAt].every(time => Number.isSafeInteger(time) && time >= 0)) throw new Error("Invalid attention timestamps");
-    if (item.state === "snoozed" && (!Number.isSafeInteger(item.snoozedUntil) || item.snoozedUntil < 0)) throw new Error("Invalid snooze timestamp");
-    return { ...validateAttentionInput(item), source: item.source, id: item.id, state: item.state, createdAt: item.createdAt, updatedAt: item.updatedAt, ...(item.state === "snoozed" ? { snoozedUntil: item.snoozedUntil } : {}) };
+    return { ...validateAttentionInput(item), source: item.source, id: item.id, state, createdAt: item.createdAt, updatedAt: item.updatedAt };
   });
+  return { items, migrated: store.version === 1 };
 }
 
 export class AttentionService {
@@ -117,7 +119,6 @@ export class AttentionService {
   private initialized = false;
   private closed = false;
   private queue: Promise<unknown> = Promise.resolve();
-  private timer?: ReturnType<typeof setTimeout>;
   private listeners = new Set<(snapshot: AttentionSnapshot) => void>();
   private readonly now: () => number;
 
@@ -131,19 +132,13 @@ export class AttentionService {
       let raw: string;
       try { raw = await fs.readFile(this.filePath, "utf8"); }
       catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") { this.initialized = true; return; } throw error; }
-      const items = validateStore(JSON.parse(raw));
-      let changed = false;
-      const now = this.now();
-      for (const item of items) if (item.state === "snoozed" && item.snoozedUntil! <= now) {
-        item.state = "pending"; delete item.snoozedUntil; item.updatedAt = now; changed = true;
-      }
-      if (changed) await this.persist(items);
+      const { items, migrated } = validateStore(JSON.parse(raw));
+      if (migrated) await this.persist(items);
       this.items = items;
     } catch (error) {
       this.error = `Attention store is read-only; existing file preserved: ${(error as Error).message}`;
     }
     this.initialized = true;
-    this.schedule();
   }
 
   list(): AttentionSnapshot {
@@ -168,23 +163,20 @@ export class AttentionService {
       const previous = items[index];
       if (previous && options.createOnly) throw new AttentionError("Attention item already exists", 412);
       const now = this.now();
-      const item: AttentionItem = { ...data, source, id, state: previous ? previous.state : "pending", createdAt: previous ? previous.createdAt : now, updatedAt: now, ...(previous && previous.snoozedUntil !== undefined ? { snoozedUntil: previous.snoozedUntil } : {}) };
+      const item: AttentionItem = { ...data, source, id, state: previous ? previous.state : "pending", createdAt: previous ? previous.createdAt : now, updatedAt: now };
       if (previous) items[index] = item; else items.push(item);
       return { result: item, sounds: previous || !item.sound ? [] : [item.sound] };
     });
   }
 
-  setState(source: string, id: string, state: AttentionState, minutes?: number): Promise<void> {
+  setState(source: string, id: string, state: AttentionState): Promise<void> {
     return this.mutate(async items => {
       validateAttentionIdentity(source, id);
-      if (!["pending", "snoozed", "done"].includes(state)) throw new AttentionError("Invalid attention state");
-      if (state === "snoozed" && ![5, 15, 60].includes(minutes!)) throw new AttentionError("Snooze must be 5, 15, or 60 minutes");
+      if (!["pending", "done"].includes(state)) throw new AttentionError("Invalid attention state");
       const item = items.find(item => item.source === source && item.id === id);
       if (!item) throw new AttentionError("Attention item not found", 404);
       if (item.approval) throw new AttentionError("Resolve approval requests using their approval controls.", 409);
       item.state = state; item.updatedAt = this.now();
-      if (state === "snoozed") item.snoozedUntil = this.now() + minutes! * 60000;
-      else delete item.snoozedUntil;
       return { result: undefined, sounds: [] };
     });
   }
@@ -195,7 +187,7 @@ export class AttentionService {
       const item = items.find(item => item.source === CODEX_APPROVAL_SOURCE && item.id === id);
       if (!item?.approval) throw new AttentionError("Approval no longer exists", 404);
       item.approval = validated; item.state = pendingApproval(validated) ? "pending" : "done";
-      item.updatedAt = this.now(); delete item.snoozedUntil;
+      item.updatedAt = this.now();
       return { result: undefined, sounds: [] };
     });
   }
@@ -214,7 +206,6 @@ export class AttentionService {
 
   close(): void {
     this.closed = true;
-    if (this.timer) clearTimeout(this.timer);
     this.listeners.clear();
   }
 
@@ -226,7 +217,6 @@ export class AttentionService {
       const { result, sounds } = await operation(items);
       await this.persist(items);
       this.items = items;
-      this.schedule();
       if (!this.closed) {
         for (const listener of this.listeners) { try { listener(this.list()); } catch { /* Observers cannot undo a durable commit. */ } }
         for (const sound of sounds) { try { this.options.onSound?.(sound); } catch { /* Delivery is best effort. */ } }
@@ -242,29 +232,10 @@ export class AttentionService {
     const temporary = `${this.filePath}.${process.pid}.${randomBytes(8).toString("hex")}.tmp`;
     const handle = await fs.open(temporary, "wx");
     try {
-      await handle.writeFile(JSON.stringify({ version: 1, items }, null, 2), "utf8");
+      await handle.writeFile(JSON.stringify({ version: 2, items }, null, 2), "utf8");
       await handle.sync();
     } finally { await handle.close(); }
     await fs.rename(temporary, this.filePath);
   }
 
-  private schedule(retryDelay = 0): void {
-    if (this.timer) clearTimeout(this.timer);
-    if (this.closed || this.error) return;
-    const snoozes = this.items.filter(item => item.state === "snoozed");
-    if (!snoozes.length) return;
-    const due = Math.min(...snoozes.map(item => item.snoozedUntil!));
-    this.timer = setTimeout(() => {
-      this.mutate(async items => {
-        const sounds: string[] = [];
-        const now = this.now();
-        for (const item of items) if (item.state === "snoozed" && item.snoozedUntil! <= now) {
-          item.state = "pending"; delete item.snoozedUntil; item.updatedAt = now;
-          if (item.sound) sounds.push(item.sound);
-        }
-        return { result: undefined, sounds };
-      }).catch(() => this.schedule(60000));
-    }, Math.min(2147483647, Math.max(retryDelay, due - this.now(), 1)));
-    this.timer.unref?.();
-  }
 }

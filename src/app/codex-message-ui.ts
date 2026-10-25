@@ -1,10 +1,13 @@
 import { AttentionBridge, AttentionItem } from "../shared/attention";
 import { attentionCodexSession, MAX_CODEX_MESSAGE_LENGTH } from "../shared/codex-message";
+import { CodexMessageDraft, sameMessageDraft } from "../shared/codex-attachments";
+import { attachmentMessage, mountCodexAttachmentsUI, newAttachmentDraft } from "./codex-attachments-ui";
 
 /** Kept mounted across inbox snapshots so incoming notifications cannot erase a draft. */
 export function mountCodexMessageUI(root: HTMLElement, bridge: AttentionBridge, initial: AttentionItem, options: { phone?: boolean } = {}) {
   let item = initial, sending = false, disposed = false;
-  let attemptedMessage: string | undefined;
+  let attemptedMessage: CodexMessageDraft | undefined;
+  const attachments = newAttachmentDraft();
   const completion = item.source === "codex" && /^completion-[a-f0-9]{64}$/.test(item.id);
   const disclosure = completion ? undefined : document.createElement("details");
   const editor = disclosure || document.createElement("section");
@@ -24,37 +27,51 @@ export function mountCodexMessageUI(root: HTMLElement, bridge: AttentionBridge, 
   input.placeholder = completion ? "Tell Codex what to do next…" : "Type a message…";
   label.appendChild(input);
   const hint = document.createElement("p");
-  hint.textContent = options.phone ? "Send to this Codex conversation." : completion ? "Ctrl+Enter to send to this conversation." : "Ctrl+Enter to send. Use Done when this item is resolved.";
+  hint.textContent = options.phone ? "" : completion ? "Ctrl+Enter to send to this conversation." : "Ctrl+Enter to send. Use Done when this item is resolved.";
   const send = document.createElement("button");
   send.type = "submit";
+  if (completion) {
+    send.dataset.sendInstruction = "";
+    send.innerHTML = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m9 6 6 6-6 6"/></svg>';
+  }
   const status = document.createElement("p");
   status.setAttribute("role", "status");
   const error = document.createElement("p");
   error.setAttribute("role", "alert");
-  form.append(label, hint, send, status, error);
+  const attachmentRoot = document.createElement("section");
+  const actions = document.createElement("div"); actions.dataset.composerActions = ""; actions.append(send);
+  form.append(label, attachmentRoot, hint, actions, status, error);
   editor.appendChild(form);
   root.appendChild(editor);
+  const attachmentUI = mountCodexAttachmentsUI(attachmentRoot, form, bridge, () => attachments, refresh);
+  actions.prepend(attachmentUI.button);
 
   function refresh() {
     editor.hidden = item.source !== "codex" || !bridge.sendAttentionMessage;
     const session = attentionCodexSession(item);
     input.disabled = sending || !session;
-    send.disabled = sending || !session || !input.value.trim();
-    send.textContent = sending ? "Sending…" : completion ? "Send instruction" : "Send message";
+    send.disabled = sending || !session || (!input.value.trim() && !attachments.files.length);
+    attachmentUI.refresh(sending || !session);
+    const sendLabel = sending ? "Sending…" : completion ? "Send instruction" : "Send message";
+    if (completion) {
+      send.title = sendLabel; send.setAttribute("aria-label", sendLabel);
+      send.setAttribute("aria-busy", String(sending));
+    } else send.textContent = sendLabel;
     if (!session) error.textContent = "This item has no Codex session. Use Go to open its conversation.";
   }
   async function submit() {
-    if (disposed || sending || send.disabled || !bridge.sendAttentionMessage) return;
-    const message = input.value;
+    if (disposed || sending || send.matches(":disabled") || !bridge.sendAttentionMessage) return;
+    const message = attachmentMessage(input.value, attachments);
     attemptedMessage = message;
     sending = true;
     error.textContent = "";
     status.textContent = "Sending to Codex…";
     refresh();
     try {
+      await attachmentUI.upload(attachments);
       const receipt = await bridge.sendAttentionMessage(item.source, item.id, message);
       if (disposed) return;
-      input.value = "";
+      input.value = ""; attachments.files = [];
       status.textContent = receipt.delivery === "steered" ? "Sent to the active Codex turn." : "Sent to Codex as a follow-up.";
     } catch (reason) {
       if (!disposed) {
@@ -77,9 +94,9 @@ export function mountCodexMessageUI(root: HTMLElement, bridge: AttentionBridge, 
   disclosure?.addEventListener("toggle", () => { if (disclosure.open && !sending) input.focus(); });
   const recovered = bridge.onRecoveredDelivery?.(delivery => {
     if (delivery.source !== item.source || delivery.id !== item.id || delivery.action !== "messages") return;
-    if (input.value === attemptedMessage) input.value = "";
+    if (sameMessageDraft(attemptedMessage, attachmentMessage(input.value, attachments))) { input.value = ""; attachments.files = []; }
     error.textContent = ""; status.textContent = "Delivery confirmed."; refresh();
   });
   refresh();
-  return { update(next: AttentionItem) { item = next; refresh(); }, dispose() { disposed = true; recovered?.(); } };
+  return { update(next: AttentionItem) { item = next; refresh(); }, dispose() { disposed = true; recovered?.(); attachmentUI.dispose(); } };
 }

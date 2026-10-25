@@ -106,7 +106,7 @@ Mount the existing inbox with phone capabilities, without native window chrome.
 Extend the build to package the web assets with the desktop application.
 
 Expose capability information so desktop-only controls can be omitted cleanly.
-The initial phone UI supports Pending/Snoozed/Done, Done/Reopen/Snooze, async
+The phone UI supports Pending/Done, Done/Reopen, async
 question answers, and new instructions. Preserve partial-answer handling and
 drafts across incoming snapshots. Keep the current limitation that blocking
 questions must be answered through their existing supported interface.
@@ -140,7 +140,7 @@ Suggested web routes, scoped to this dedicated listener:
 | --- | --- |
 | `GET /api/attention` | Current snapshot |
 | `GET /api/events` | Server-sent events, initial snapshot and subsequent changes |
-| `POST /api/attention/:source/:id/state` | Done, snooze, reopen |
+| `POST /api/attention/:source/:id/state` | Done, reopen |
 | `GET /api/attention/:source/:id/questions` | Verified async questions |
 | `POST /api/attention/:source/:id/answers` | Submit answers and return receipt |
 | `POST /api/attention/:source/:id/messages` | Send instruction and return receipt |
@@ -183,7 +183,7 @@ a PushSubscription. Persist subscriptions and a stable VAPID key pair on the
 desktop; only expose the public key. Use a maintained Web Push implementation
 compatible with the project's supported Node/Electron runtime.
 
-Trigger pushes on newly pending items and snooze expiry. Persist notification
+Trigger pushes on new pending items. Persist notification
 event identities so app restarts and repeated hook writes do not replay old
 notifications. Coalesce events by attention item, use bounded expiry/retries,
 stop sending expired/resolved queued alerts, and retire invalid subscriptions.
@@ -227,7 +227,7 @@ Codex delivery and native navigation depend on the interactive user session.
    state, service worker update, and no duplicate submissions.
 6. Real Android acceptance over cellular + Tailscale: install, answer a fixture
    question, send a fixture instruction, receive a notification while the PWA is
-   closed/screen locked, tap into the right card, snooze, reconnect, and restart
+   closed/screen locked, tap into the right card, mark Done, reconnect, and restart
    the desktop app. Verify unauthorized tailnet access is denied and the new
    backend port cannot be reached directly over LAN/tailnet.
 
@@ -248,7 +248,7 @@ and a native Android app are unnecessary for this design.
   add an explicitly named Focus desktop action later. URL destinations can open
   on the phone. This does not provide remote desktop viewing.
 - Notification content/frequency: proposed default is project + title for new
-  pending items and snooze expiry. Full question text stays in the pane; filters
+  pending items. Full question text stays in the pane; filters
   or generic lock-screen text can be added if preferred.
 - Resolved deployment values: use the current device owner's Tailscale login
   and Serve HTTPS origin; configured and verified locally.

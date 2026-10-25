@@ -45,38 +45,51 @@ test("serializes concurrent updates and survives a failed atomic replace without
   expect(sound).toHaveBeenCalledTimes(1);
 });
 
-test("snooze expires once after saving, and reopening does not replay a sound", async () => {
+test("Done and Reopen do not schedule work or replay a sound", async () => {
   let now = 1000;
   const sound = jest.fn();
   const { service } = await fixture(() => now, sound);
   await service.upsert("robot", "answer", { title: "Answer me", sound: "icq" });
   jest.useFakeTimers({ doNotFake: ["performance"] });
-  await service.setState("robot", "answer", "snoozed", 5);
-  const expired = new Promise<void>(resolve => service.onChanged(snapshot => { if (snapshot.items[0].state === "pending") resolve(); }));
-  now += 300000;
-  jest.advanceTimersByTime(300000);
-  await expired;
-  expect(sound).toHaveBeenCalledTimes(2);
   await service.setState("robot", "answer", "done");
+  expect(jest.getTimerCount()).toBe(0);
+  now += 86400000; jest.advanceTimersByTime(86400000);
+  expect(service.get("robot", "answer").state).toBe("done");
   await service.setState("robot", "answer", "pending");
-  expect(sound).toHaveBeenCalledTimes(2);
+  expect(jest.getTimerCount()).toBe(0);
+  expect(sound).toHaveBeenCalledTimes(1);
 });
 
-test("restart restores future snoozes and normalizes overdue snoozes without historical sounds", async () => {
-  let now = 1000;
-  const { service, file } = await fixture(() => now);
-  await service.upsert("task", "one", { title: "First", sound: "icq" });
-  await service.setState("task", "one", "snoozed", 5);
-  await service.upsert("task", "two", { title: "Second", sound: "icq" });
-  await service.setState("task", "two", "snoozed", 60);
-  service.close(); now += 300001;
+test("legacy deferred items migrate to Pending without losing metadata or replaying historical sounds", async () => {
+  const { service, file } = await fixture(); service.close();
+  const saved = ["overdue", "future", "pending", "done"].map((id, index) => ({ source: "task", id, title: `Human title ${id}`,
+    description: "Keep this note", destination: { kind: "url", url: "https://example.com" }, sound: "icq", createdAt: 100, updatedAt: 200,
+    state: index < 2 ? "snoozed" : id, ...(index < 2 ? { snoozedUntil: index ? Date.now() + 86400000 : 1 } : {}) }));
+  await fs.writeFile(file, JSON.stringify({ version: 1, items: saved }));
   const sound = jest.fn();
-  const restored = new AttentionService(file, { now: () => now, onSound: sound }); services.push(restored);
+  const restored = new AttentionService(file, { onSound: sound }); services.push(restored);
+  jest.useFakeTimers({ doNotFake: ["performance"] });
   await restored.initialize();
-  expect(restored.get("task", "one").state).toBe("pending");
-  expect(restored.get("task", "two").state).toBe("snoozed");
-  expect(JSON.parse(await fs.readFile(file, "utf8")).items[0].state).toBe("pending");
+  const expected = saved.map(({ snoozedUntil: _removed, ...item }) => ({ ...item, state: item.state === "snoozed" ? "pending" : item.state }));
+  expect(restored.list().error).toBeUndefined();
+  for (const item of expected) expect(restored.get(item.source, item.id)).toEqual(item);
+  expect(JSON.parse(await fs.readFile(file, "utf8"))).toEqual({ version: 2, items: expected });
+  expect(jest.getTimerCount()).toBe(0);
   expect(sound).not.toHaveBeenCalled();
+  const replace = jest.spyOn(fs, "rename");
+  const restarted = new AttentionService(file); services.push(restarted); await restarted.initialize();
+  expect(restarted.list()).toEqual(restored.list()); expect(replace).not.toHaveBeenCalled();
+});
+
+test("a failed legacy migration preserves the original file and refuses later writes", async () => {
+  const { service, file } = await fixture(); service.close();
+  const raw = JSON.stringify({ version: 1, items: [{ source: "task", id: "legacy", title: "Keep", state: "snoozed", snoozedUntil: 5000, createdAt: 1, updatedAt: 2 }] });
+  await fs.writeFile(file, raw);
+  jest.spyOn(fs, "rename").mockRejectedValueOnce(new Error("disk refused migration"));
+  const restored = new AttentionService(file); services.push(restored); await restored.initialize();
+  expect(restored.list().error).toContain("read-only");
+  expect(await fs.readFile(file, "utf8")).toBe(raw);
+  await expect(restored.upsert("task", "other", { title: "No write" })).rejects.toMatchObject({ status: 503 });
 });
 
 test.each(["{broken", '{"version":99,"items":[]}', '{"version":1,"items":[{"title":"broken"}]}'])("preserves malformed and unknown stores: %s", async raw => {
@@ -95,12 +108,12 @@ test("validates requests, real sound IDs, destinations, and state actions", asyn
   await expect(service.upsert("task", "one", { title: "Bad", destination: { kind: "url", url: "file:///secret" } })).rejects.toMatchObject({ status: 400 });
   await expect(service.upsert("task", "one", { title: "Bad", destination: { kind: "window", hwnd: "0", pid: 1, processStartedAt: new Date().toISOString() } })).rejects.toMatchObject({ status: 400 });
   await service.upsert("task", "one", { title: "Good", destination: { kind: "url", url: "https://example.org/" } });
-  await expect(service.setState("task", "one", "snoozed", 1)).rejects.toMatchObject({ status: 400 });
+  await expect(service.setState("task", "one", "snoozed" as any)).rejects.toMatchObject({ status: 400 });
+  expect(service.get("task", "one").state).toBe("pending");
   await expect(service.setState("task", "missing", "done")).rejects.toMatchObject({ status: 404 });
-  await service.setState("task", "one", "snoozed", 15);
-  const until = service.get("task", "one").snoozedUntil;
+  await service.setState("task", "one", "done");
   await service.upsert("task", "one", { title: "Updated" });
-  expect(service.get("task", "one").snoozedUntil).toBe(until);
+  expect(service.get("task", "one").state).toBe("done");
 });
 
 test("observer and sound failures cannot reject a durable request; unsubscribe removes listeners", async () => {

@@ -79,6 +79,16 @@ test("creates and sends literal input without overriding model, approval or sand
   expect(f.service.owns("new-thread")).toBe(true); f.service.close();
 });
 
+test("attachment-only messages reach new and active project conversations", async () => {
+  const f = await fixture();
+  const image = { id: "image", name: "screen.png", path: path.join(f.cwd, "screen.png"), size: 20, mimeType: "image/png", image: true };
+  await f.service.send(f.instance, "", { text: "", attachments: [image] });
+  expect(f.request.mock.calls[1][1].input[1]).toEqual({ type: "localImage", path: image.path });
+  await f.service.sendExisting("new-thread", { text: "Inspect it", attachments: [image] });
+  expect(f.request.mock.calls[2]).toEqual(["turn/steer", expect.objectContaining({ expectedTurnId: "turn", input: expect.arrayContaining([{ type: "localImage", path: image.path }]) })]);
+  f.service.close();
+});
+
 test("resumes an explicitly selected saved thread, then steers subsequent input while it is active", async () => {
   const f = await fixture(); await f.service.send(f.instance, "saved", "continue");
   expect(f.request.mock.calls.map(call => call[0])).toEqual(["thread/read", "thread/resume", "turn/start"]);

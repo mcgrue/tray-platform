@@ -3,7 +3,7 @@
 Add an inline message composer to Codex inbox cards. Deliver to the conversation
 identified by the hook, through the existing Codex client's local IPC router.
 Steer an active turn; start a follow-up only after an explicit inactive-turn
-rejection. Retain drafts on failure and leave Done/Snooze under human control.
+rejection. Retain drafts on failure and leave Done under human control.
 
 The installed Windows extension (openai.chatgpt 26.1007.21434) exposes the
 `codex-ipc` named pipe and versioned owner-discovery/follower requests. Live

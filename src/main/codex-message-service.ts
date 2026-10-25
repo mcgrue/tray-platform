@@ -1,7 +1,8 @@
 import { createHash, randomUUID } from "crypto";
 import { AttentionItem } from "../shared/attention";
-import { attentionCodexSession, CodexMessageReceipt, legacyCodexIdentity, MAX_CODEX_MESSAGE_LENGTH } from "../shared/codex-message";
+import { attentionCodexSession, CodexMessageReceipt, legacyCodexIdentity } from "../shared/codex-message";
 import { CodexIpcClient, CodexIpcResponse } from "./codex-ipc";
+import { CodexMessage, codexMessageParts, validateCodexMessage } from "./codex-attachments";
 
 type Client = Pick<CodexIpcClient, "connect" | "request" | "close">;
 
@@ -25,7 +26,7 @@ export class CodexMessageService {
   constructor(private readonly createClient: () => Client = () => {
     if (process.platform !== "win32") throw new Error("Sending to Codex currently requires Windows.");
     return new CodexIpcClient();
-  }, private readonly projectMessages?: { owns(id: string): boolean; sendExisting(id: string, message: string): Promise<CodexMessageReceipt> }) {}
+  }, private readonly projectMessages?: { owns(id: string): boolean; sendExisting(id: string, message: CodexMessage): Promise<CodexMessageReceipt> }) {}
 
   async send(item: AttentionItem, message: unknown, expectedOwner?: string): Promise<CodexMessageReceipt> {
     if (this.closed) throw new Error("Codex messaging is closed.");
@@ -36,9 +37,7 @@ export class CodexMessageService {
       const expected = "question-" + createHash("sha256").update(JSON.stringify([identity.session, identity.turn, identity.call])).digest("hex");
       if (item.id !== expected) throw new Error("Cannot verify this item's Codex session. Open the conversation with Go.");
     }
-    if (typeof message !== "string" || !message.trim() || message.length > MAX_CODEX_MESSAGE_LENGTH) {
-      throw new Error(`Enter a message of 1 to ${MAX_CODEX_MESSAGE_LENGTH} characters.`);
-    }
+    validateCodexMessage(message);
     if (this.sending.has(sessionId)) throw new Error("A message is already being sent to this Codex conversation.");
     if (this.projectMessages?.owns(sessionId)) return this.projectMessages.sendExisting(sessionId, message);
     this.sending.add(sessionId);
@@ -53,13 +52,13 @@ export class CodexMessageService {
       if (!owner) throw new Error("Codex did not identify the conversation owner.");
       if (expectedOwner && owner !== expectedOwner) throw new Error("This conversation moved to another Codex client. Refresh conversations before sending.");
       const id = randomUUID();
-      const input = [{ type: "text", text: message, text_elements: [] }];
-      const restoreMessage = { id, text: message, createdAt: Date.now(), context: {
-        prompt: message, addedFiles: [], fileAttachments: [], imageAttachments: [], ideContext: null,
+      const { text, input, attachments, fileAttachments, imageAttachments } = codexMessageParts(message);
+      const restoreMessage = { id, text, createdAt: Date.now(), context: {
+        prompt: text, addedFiles: [], fileAttachments, imageAttachments, ideContext: null,
       } };
       const steerMethod = "thread-follower-steer-turn";
       const steered = await client.request(steerMethod, {
-        conversationId: sessionId, input, restoreMessage, clientUserMessageId: id, attachments: [],
+        conversationId: sessionId, input, restoreMessage, clientUserMessageId: id, attachments,
       }, 1, owner);
       // Only an explicit rejection before admission permits trying a new turn.
       // Timeouts, disconnects, and all other errors must never replay user input.
@@ -75,7 +74,7 @@ export class CodexMessageService {
         request: { threadId: sessionId, input, clientUserMessageId: id },
         // Owner discovery above is local. Admission uses a cloud-only transport;
         // local VS Code owners must use their ordinary turn/start path.
-        context: { restoreMessage, inheritThreadSettings: true, useUserMessageAdmission: false },
+        context: { restoreMessage, ...(attachments.length ? { attachments } : {}), inheritThreadSettings: true, useUserMessageAdmission: false },
       } }, 2, owner);
       const turnId = result(started, startMethod, owner)?.result?.turn?.id;
       if (typeof turnId !== "string" || !turnId) throw new Error("Codex did not confirm the message. Check the conversation before sending again.");

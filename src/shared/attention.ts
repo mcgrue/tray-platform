@@ -1,3 +1,5 @@
+import { CodexAttachmentsBridge } from "./codex-attachments";
+
 export interface WindowDestination {
   kind: "window";
   hwnd: string;
@@ -12,7 +14,7 @@ export interface UrlDestination {
 }
 
 export type Destination = WindowDestination | UrlDestination;
-export type AttentionState = "pending" | "snoozed" | "done";
+export type AttentionState = "pending" | "done";
 
 export interface CodexOrigin {
   kind: "vscode-codex";
@@ -46,7 +48,6 @@ export interface AttentionItem extends AttentionInput {
   source: string;
   id: string;
   state: AttentionState;
-  snoozedUntil?: number;
   createdAt: number;
   updatedAt: number;
 }
@@ -66,12 +67,12 @@ export interface AttentionNavigationProgress extends NavigationProgress {
   id: string;
 }
 
-export interface AttentionBridge {
+export interface AttentionBridge extends CodexAttachmentsBridge {
   onRecoveredDelivery?(callback: (delivery: { source: string; id: string; action: "messages" | "answers" | "approvals" }) => void): () => void;
   getAttention(): Promise<AttentionSnapshot>;
-  setAttentionState(source: string, id: string, state: AttentionState, minutes?: number): Promise<void>;
+  setAttentionState(source: string, id: string, state: AttentionState): Promise<void>;
   goToAttention(source: string, id: string): Promise<void>;
-  sendAttentionMessage?(source: string, id: string, message: string): Promise<import("./codex-message").CodexMessageReceipt>;
+  sendAttentionMessage?(source: string, id: string, message: import("./codex-attachments").CodexMessageDraft): Promise<import("./codex-message").CodexMessageReceipt>;
   getAttentionQuestion?(source: string, id: string): Promise<import("./codex-question").CodexQuestion[]>;
   answerAttentionQuestion?(source: string, id: string, answers: import("./codex-question").CodexQuestionAnswer[]): Promise<import("./codex-question").CodexAnswerReceipt>;
   getAttentionApproval?(source: string, id: string): Promise<import("./codex-approval").CodexApproval>;

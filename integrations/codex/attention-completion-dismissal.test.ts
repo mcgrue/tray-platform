@@ -49,12 +49,10 @@ test("a message acknowledges only earlier completions in its exact session, reta
   for (const event of [stop(), older, other, current, question]) await invoke(event);
   const identity = toAttention(stop());
   await service.upsert("codex", identity.id, { ...identity.body, title: "Human title", destination: { kind: "url", url: "https://example.com" } });
-  await service.setState("codex", identity.id, "snoozed", 5);
   await service.upsert("manual", identity.id, { ...identity.body });
   const before = item(stop());
   await invoke(prompt());
   expect(item(stop())).toMatchObject({ state: "done", title: before.title, destination: before.destination, createdAt: before.createdAt });
-  expect(item(stop()).snoozedUntil).toBeUndefined();
   expect(item(older).state).toBe("done");
   for (const event of [other, current, question]) expect(item(event).state).toBe("pending");
   expect(service.get("manual", identity.id)?.state).toBe("pending");

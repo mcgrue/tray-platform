@@ -77,7 +77,7 @@ async function acknowledgeCompletions(event, options, list, dismiss, observedAt)
     const items = await list(bounded());
     const known = new Set(items.filter(item => item?.source === "codex").map(item => item.id));
     const ids = items.filter(item => item?.source === "codex" && item.codexSessionId === event.session_id &&
-      validId(item.id) && item.id !== ownCompletion && ["pending", "snoozed"].includes(item.state) &&
+      validId(item.id) && item.id !== ownCompletion && item.state === "pending" &&
       Number.isSafeInteger(item.createdAt) && item.createdAt <= cutoff).map(item => item.id);
     // A Stop hook can still be waiting for origin discovery / its HTTP PUT.
     // Mark that ID now; creation checks the marker again after delivery.

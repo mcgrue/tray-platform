@@ -1,4 +1,4 @@
-import { app, BrowserWindow, globalShortcut, ipcMain, shell } from "electron";
+import { app, BrowserWindow, globalShortcut, ipcMain, shell, nativeImage } from "electron";
 import path from "path";
 import { createHash } from "crypto";
 import { AttentionService } from "./attention-service";
@@ -30,6 +30,7 @@ import { startAttentionWeb } from "./attention-web";
 import { CodexInstanceMessages } from "./codex-instance-messages";
 import { CodexProjectSessions } from "./codex-project-sessions";
 import { CodexApprovalService } from "./codex-approval-service";
+import { CodexAttachments } from "./codex-attachments";
 
 require("dotenv").config();
 
@@ -72,6 +73,8 @@ export const applicationReady = singleInstance ? app.whenReady().then(async () =
   await attention.initialize();
   const codexApprovals = new CodexApprovalService(attention);
   await codexApprovals.initialize();
+  const codexAttachments = new CodexAttachments(path.join(app.getPath("userData"), "attachments"), bytes => !nativeImage.createFromBuffer(bytes).isEmpty());
+  await codexAttachments.initialize();
   const bookmarks = new BookmarkService(path.join(app.getPath("userData"), "bookmarks.json"), {
     attentionExists: (source, id) => Boolean(attention.get(source, id)),
   });
@@ -199,23 +202,26 @@ export const applicationReady = singleInstance ? app.whenReady().then(async () =
     return item;
   };
   ipcMain.handle("attention-list", () => attention.list());
-  ipcMain.handle("attention-state", (_event, source: string, id: string, state: AttentionState, minutes?: number) =>
-    attention.setState(source, id, state, minutes));
+  ipcMain.handle("attention-state", (_event, source: string, id: string, state: AttentionState) =>
+    attention.setState(source, id, state));
   ipcMain.handle("attention-go", async (_event, source: string, id: string) => {
     const item = findItem(source, id);
     await activateAttention(item);
   });
-  ipcMain.handle("attention-message", (event, source: string, id: string, message: string) => {
+  ipcMain.handle("attention-message", async (event, source: string, id: string, message: unknown) => {
     if (event.sender !== mainWindow.webContents || event.senderFrame !== mainWindow.webContents.mainFrame) {
       throw new Error("Messages must be sent from the attention inbox.");
     }
-    return operations.message(source, id, message);
+    return operations.message(source, id, await codexAttachments.message(message, "desktop"));
   });
   const requireInbox = (event: Electron.IpcMainInvokeEvent) => {
     if (event.sender !== mainWindow.webContents || event.senderFrame !== mainWindow.webContents.mainFrame) {
       throw new Error("Questions must be answered from the attention inbox.");
     }
   };
+  ipcMain.handle("codex-attachment-upload", (event, upload) => {
+    requireInbox(event); return codexAttachments.upload(upload, "desktop");
+  });
   ipcMain.handle("attention-question", (event, source: string, id: string) => {
     requireInbox(event);
     return operations.questions(source, id);
@@ -238,8 +244,8 @@ export const applicationReady = singleInstance ? app.whenReady().then(async () =
   ipcMain.handle("codex-instance-conversations", (event, target) => {
     requireInbox(event); return codexInstanceMessages.conversations(target);
   });
-  ipcMain.handle("codex-instance-message", (event, target, conversationId, message) => {
-    requireInbox(event); return codexInstanceMessages.send(target, conversationId, message);
+  ipcMain.handle("codex-instance-message", async (event, target, conversationId, message) => {
+    requireInbox(event); return codexInstanceMessages.send(target, conversationId, await codexAttachments.message(message, "desktop"));
   });
   ipcMain.handle("shortcuts-list", () => shortcuts.list());
   ipcMain.handle("shortcuts-set", (_event, key: ShortcutKey, accelerator: string) => shortcuts.set(key, accelerator));
@@ -309,7 +315,7 @@ export const applicationReady = singleInstance ? app.whenReady().then(async () =
     sayWords: (text) => sendAudio("say-words", text),
   });
   const web = await startAttentionWeb(app.getPath("userData"), path.join(__dirname, "../web"), attention, operations,
-    { instances: codexInstances, messages: codexInstanceMessages })
+    { instances: codexInstances, messages: codexInstanceMessages }, codexAttachments)
     .catch(error => { console.error("Attention PWA unavailable:", error.message); return undefined; });
   app.on("before-quit", () => {
     quitting = true;
@@ -331,7 +337,7 @@ export const applicationReady = singleInstance ? app.whenReady().then(async () =
     server.close();
     web?.close();
   });
-  return { attention, desktop, mainWindow, tray, server, shortcuts, navigatePending, bookmarks, captureBookmarks, codexInstances, codexMessages, codexInstanceMessages, codexProjects, codexApprovals };
+  return { attention, desktop, mainWindow, tray, server, shortcuts, navigatePending, bookmarks, captureBookmarks, codexInstances, codexMessages, codexInstanceMessages, codexProjects, codexApprovals, codexAttachments };
 }) : Promise.resolve(undefined);
 
 applicationReady.catch((error) => {

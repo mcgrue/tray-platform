@@ -76,9 +76,9 @@ test.each([["pending", "expired"], ["sending", "unknown"]] as const)("new servic
   restarted.close(); restartedAttention.close(); f.abort();
 });
 
-test("Done, Snooze and Reopen cannot resolve an approval", async () => {
+test("Done and Reopen cannot resolve an approval", async () => {
   const f = await request();
-  for (const state of ["done", "snoozed", "pending"] as const) await expect(attention.setState(source, f.id, state, 5)).rejects.toThrow("approval controls");
+  for (const state of ["done", "pending"] as const) await expect(attention.setState(source, f.id, state)).rejects.toThrow("approval controls");
   expect(f.wire).toEqual([]); f.abort();
 });
 

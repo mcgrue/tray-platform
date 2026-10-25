@@ -36,12 +36,19 @@ nav[aria-label="Attention views"] button { flex: 1; white-space: nowrap; }
 [data-phone-instances] :is(table, tbody) { display: block; background: transparent; }
 [data-phone-instances] thead { display: none; }
 [data-phone-instances] tbody { display: grid; gap: 12px; }
-[data-phone-instances] tr { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); padding: 16px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); }
+[data-phone-instances] tr { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); padding: 16px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); }
 [data-phone-instances] td { display: block; border: 0; padding: 6px 0; min-width: 0 !important; overflow-wrap: anywhere; }
 [data-phone-instances] td:is(:nth-child(1), :nth-child(2), :nth-child(5)) { grid-column: 1 / -1; }
 [data-phone-instances] td:not(:first-child)::before { content: attr(data-label); display: block; font-family: var(--font-sans); font-size: 11px; color: var(--muted-foreground); margin-bottom: 3px; }
-[data-phone-instances] td:first-child { font-size: 15px; font-weight: 600; }
-[data-phone-instances] [data-message-codex] { width: 100%; }
+[data-phone-instances] td:first-child { padding: 0 52px 0 0; }
+[data-instance-disclosure] { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; min-height: 44px; margin: 0; padding: 6px 0; text-align: left; font-size: 15px; font-weight: 600; background: transparent; border-color: transparent; box-shadow: none; }
+[data-instance-disclosure] .codex-activity-icon { flex-shrink: 0; margin: 0; }
+[data-instance-title] { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+[data-instance-chevron] { display: flex; flex-shrink: 0; margin-left: auto; color: var(--muted-foreground); }
+[data-instance-chevron] svg { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+[data-instance-disclosure][aria-expanded="true"] [data-instance-chevron] { transform: rotate(90deg); }
+[data-phone-instances] td[data-instance-actions] { position: absolute; top: 16px; right: 16px; width: auto; padding: 0; background: transparent; }
+[data-phone-instances] td[data-instance-actions]::before { display: none; }
 [data-phone-instances] [data-codex-instance-composer] { padding: 16px; overflow-wrap: anywhere; }
 [data-phone-instances] [data-codex-instance-composer] :is(select, textarea) { min-width: 0; max-width: 100%; }
 @media (max-width: 360px) { .web-header { gap: 8px; } .web-header > span { font-size: 11px; letter-spacing: .08em; } }

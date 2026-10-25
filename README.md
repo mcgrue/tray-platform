@@ -371,7 +371,10 @@ separate temporary user-data directory; the live inbox is not used.
 The phone has **Attention Inbox** and **Codex Instances** tabs. The inbox supports
 Pending/Snoozed/Done, question answers, and Codex instructions. The instance tab
 shows the desktop's live activity icons and legend, project and process details,
-sorting, and Refresh. Its phone-sized cards include **Message**: select a saved
+sorting, and Refresh. Phone entries start collapsed to their activity icon and
+title; tap the title row to show or hide the folder, PIDs, and last-update details.
+Expanded entries stay open across tab switches, sorting, and live updates.
+Each entry has a right-aligned **⋮** menu with **Message**: select a saved
 project conversation or leave **New conversation** selected to create and send.
 Drafts survive tab switches and live updates. Notification links switch back to
 the inbox without clearing instance drafts. Sends use persistent delivery

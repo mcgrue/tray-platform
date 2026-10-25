@@ -58,18 +58,68 @@ async function run() {
   await tab("codex-instances");
   assert(await evaluate(() => !document.querySelector("#codex-instances").hidden && document.querySelector("#attention-inbox").hidden));
   assert.equal(await evaluate(() => document.querySelectorAll(".codex-activity-legend [data-codex-activity]").length), 4);
+  const disclosure = pid => evaluate(pid => {
+    const row = document.querySelector(`[data-codex-pid="${pid}"]`), toggle = row.querySelector("[data-instance-disclosure]");
+    return { expanded: toggle.getAttribute("aria-expanded") === "true", identity: toggle.dataset.instanceDisclosure,
+      detailsVisible: [...row.querySelectorAll("td[data-label]")].slice(1).every(cell => cell.getBoundingClientRect().height > 0),
+      detailsHidden: [...row.querySelectorAll("td[data-label]")].slice(1).every(cell => cell.hidden && cell.getBoundingClientRect().height === 0) };
+  }, pid);
+  assert((await disclosure(42)).detailsHidden && (await disclosure(99)).detailsHidden, "Only the first line is visible initially");
+  const toggleDetails = pid => evaluate(pid => document.querySelector(`[data-codex-pid="${pid}"] [data-instance-disclosure]`).click(), pid);
   for (const width of [360, 412]) {
     window.setSize(width, 900); await sleep(80);
     assert(await evaluate(() => document.documentElement.scrollWidth <= innerWidth), `No horizontal page scrolling at ${width}px`);
-    assert(await evaluate(() => [...document.querySelectorAll("[data-message-codex]")].every(node => {
-      const box = node.getBoundingClientRect(); return box.left >= 0 && box.right <= innerWidth;
-    })), "Message actions fit phone width");
+    assert(await evaluate(() => [...document.querySelectorAll("[data-instance-menu-toggle]")].every(node => {
+      const box = node.getBoundingClientRect(), card = node.closest("tr").getBoundingClientRect();
+      return box.width >= 44 && box.left >= 0 && box.right <= innerWidth && Math.abs(card.right - box.right - 17) <= 1;
+    })), "Right-aligned instance menus fit phone cards");
+    assert(await evaluate(() => [...document.querySelectorAll("[data-codex-pid]")].every(row => row.getBoundingClientRect().height < 100)),
+      "Collapsed cards occupy a single line");
   }
+  await toggleDetails(42);
+  assert((await disclosure(42)).detailsVisible && (await disclosure(99)).detailsHidden, "Expanding one entry only reveals its details");
+  await evaluate(() => document.querySelector('[data-codex-pid="42"] [data-instance-disclosure]').focus());
+  await instances.refresh();
+  await wait("expanded entry survives update", async () => (await disclosure(42)).detailsVisible);
+  assert(await evaluate(() => document.activeElement.matches('[data-codex-pid="42"] [data-instance-disclosure]')),
+    "Refresh preserves disclosure keyboard focus");
+  await tab("attention-inbox"); await tab("codex-instances");
+  assert((await disclosure(42)).detailsVisible, "Tab switching preserves expanded entries");
+  assert(await evaluate(() => document.querySelector("[data-instance-menu]").hidden));
+  await evaluate(() => document.querySelector('[data-codex-pid="42"] [data-instance-menu-toggle]').click());
+  assert(await evaluate(() => {
+    const menu = document.querySelector("[data-instance-menu]").getBoundingClientRect();
+    return menu.width > 0 && menu.left >= 0 && menu.right <= innerWidth && menu.bottom <= innerHeight;
+  }), "Open menu fits phone width and height");
+  await evaluate(() => document.querySelector('[data-codex-pid="99"] [data-instance-menu-toggle]').click());
+  assert(await evaluate(() => document.querySelectorAll('[data-instance-menu-toggle][aria-expanded="true"]').length === 1
+    && document.querySelector("[data-instance-menu]").getAttribute("aria-label").includes("PID 99")), "Only the chosen instance menu is open");
+  assert((await disclosure(99)).detailsHidden && (await disclosure(42)).detailsVisible, "Menu clicks do not toggle details");
   window.showInactive(); await sleep(100);
   fs.writeFileSync(path.join(directory, "phone-instances.png"), (await window.webContents.capturePage()).toPNG()); window.hide();
+  await evaluate(() => document.querySelector('[data-codex-pid="99"] [data-instance-menu-toggle]').click());
+  assert(await evaluate(() => document.querySelector("[data-instance-menu]").hidden), "Second tap closes the menu");
   await evaluate(() => { const sort = document.querySelector("[data-instance-sort] select"); sort.value = "codexPid:descending"; sort.dispatchEvent(new Event("change")); });
   assert.equal(await evaluate(() => document.querySelector("[data-codex-pid]").dataset.codexPid), "99");
-  const open = pid => evaluate(pid => document.querySelector(`[data-codex-pid="${pid}"] [data-message-codex]`).click(), pid);
+  assert((await disclosure(42)).detailsVisible && (await disclosure(99)).detailsHidden, "Sorting preserves each entry's expansion");
+  await toggleDetails(42); assert((await disclosure(42)).detailsHidden, "A second click collapses the details");
+  await evaluate(() => document.querySelector('[data-codex-pid="99"] [data-instance-disclosure]').focus());
+  window.webContents.sendInputEvent({ type: "keyDown", keyCode: "Space" });
+  window.webContents.sendInputEvent({ type: "keyUp", keyCode: "Space" });
+  await wait("Space expands details", async () => (await disclosure(99)).detailsVisible);
+  window.webContents.sendInputEvent({ type: "keyDown", keyCode: "Enter" });
+  window.webContents.sendInputEvent({ type: "char", keyCode: "\r" });
+  window.webContents.sendInputEvent({ type: "keyUp", keyCode: "Enter" });
+  await wait("Enter collapses details", async () => (await disclosure(99)).detailsHidden);
+  await toggleDetails(99);
+  rows[1].codexStartedAt = "2026-10-24T11:00:00Z"; await instances.refresh();
+  await wait("new process identity", async () => (await disclosure(99)).identity.includes("11:00:00"));
+  assert((await disclosure(99)).detailsHidden, "A reused PID starts collapsed");
+  const open = pid => evaluate(pid => {
+    const toggle = document.querySelector(`[data-codex-pid="${pid}"] [data-instance-menu-toggle]`);
+    toggle.scrollIntoView({ block: "center" }); toggle.click();
+    document.querySelector("[data-instance-menu] [data-message-codex]").click();
+  }, pid);
   const read = () => evaluate(() => { const panel = document.querySelector("[data-codex-instance-composer]"); return {
     text: panel.querySelector("textarea").value, selected: panel.querySelector("select").value, choices: panel.querySelector("select").options.length,
     disabled: panel.querySelector('[type="submit"]').matches(":disabled"), status: panel.querySelector('[role="status"]').textContent,
@@ -115,6 +165,8 @@ async function run() {
   fs.writeFileSync(path.join(directory, "phone-composer.png"), (await window.webContents.capturePage()).toPNG()); window.hide();
   offline = true; for (const socket of sockets) socket.destroy();
   await wait("offline controls", async () => (await read()).disabled);
+  await evaluate(() => document.querySelector("[data-instance-menu-toggle]").click());
+  assert(await evaluate(() => document.querySelector("[data-instance-menu]").hidden), "Offline menus stay disabled");
   await evaluate(() => document.querySelector("[data-codex-instance-composer] textarea").dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true, bubbles: true })));
   await sleep(100); assert.equal(sent.length, 4, "Keyboard shortcuts cannot send through a disabled fieldset");
   await tab("attention-inbox"); await tab("codex-instances"); assert.equal((await read()).text, "Next retained draft");
@@ -124,7 +176,7 @@ async function run() {
   assert.equal(sent.length, 4, "Reconnect never replays messages");
   assert.equal((await read()).text, "Next retained draft");
   assert.equal(errors.filter(message => !/Failed to load resource|ERR_/.test(message)).length, 0, errors.join("\n"));
-  console.log("PASS PWA Codex tab: mobile cards, sort, live activity, saved/new messages, tab drafts, lost-response recovery, notification routing, offline/reconnect");
+  console.log("PASS PWA Codex tab: collapsible mobile cards, keyboard, sort, live activity, saved/new messages, tab drafts, lost-response recovery, notification routing, offline/reconnect");
 }
 const watchdog = setTimeout(() => { console.error("PWA Codex smoke timed out"); finish(1); }, 90000);
 function finish(code) { clearTimeout(watchdog); window?.destroy(); web?.close(); for (const socket of sockets) socket.destroy(); proxy?.close(); instances?.close(); attention?.close(); push?.close(); app.exit(code); }

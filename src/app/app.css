@@ -143,7 +143,13 @@ tbody tr:hover { background: var(--accent); }
 [data-codex-instance-composer] { padding:20px; margin:16px 0; background:var(--card); border:1px solid var(--border); border-radius:var(--radius); }
 [data-codex-instance-composer] label { display:flex; width:100%; }
 [data-codex-instance-composer] select { width:100%; }
-[data-message-codex] { display:block; margin:8px 0 0; }
+[data-instance-actions] { position: sticky; right: 0; width: 1%; text-align: right; }
+td[data-instance-actions] { padding: 8px; background: var(--card); }
+tbody tr:hover td[data-instance-actions] { background: var(--accent); }
+[data-instance-menu-toggle] { display: inline-grid; place-items: center; width: 44px; height: 44px; padding: 8px; margin: 0; background: transparent; border-color: transparent; box-shadow: none; }
+[data-instance-menu-toggle] svg { fill: currentColor; }
+[data-instance-menu] { position: fixed; z-index: 30; min-width: 160px; max-width: calc(100vw - 16px); padding: 4px; background: var(--popover); color: var(--popover-foreground); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-lg); }
+[data-instance-menu] button { display: block; width: 100%; margin: 0; text-align: left; background: transparent; border-color: transparent; box-shadow: none; }
 
 /* Native window state colors are supplied by the titlebar bridge. */
 #app-titlebar { position: fixed; inset: 0 0 auto; height: 36px; z-index: 1000; background: var(--sidebar); color: var(--sidebar-foreground); -webkit-app-region: drag; user-select: none; }

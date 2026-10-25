@@ -51,16 +51,39 @@ async function run() {
   codexMessages.createClient = client;
   await publish(rows);
   const evaluate = (fn, ...args) => window.webContents.executeJavaScript(`(${fn.toString()})(...${JSON.stringify(args)})`);
-  await wait("instance buttons", () => evaluate(() => document.querySelectorAll("[data-message-codex]").length === 2));
+  await wait("instance menus", () => evaluate(() => document.querySelectorAll("[data-instance-menu-toggle]").length === 2));
   await evaluate(() => document.querySelector('[role="tab"][aria-controls="codex-instances"]').click());
   assert(await evaluate(() => {
-    const button = document.querySelector("[data-message-codex]").getBoundingClientRect();
+    const button = document.querySelector("[data-instance-menu-toggle]").getBoundingClientRect();
     const pane = document.querySelector("#codex-instances [data-table-scroll]").getBoundingClientRect();
-    return button.left >= pane.left && button.right <= pane.right;
-  }), "Message action is visible without scrolling the table horizontally");
+    return button.width >= 44 && button.left >= pane.left && button.right <= pane.right && pane.right - button.right <= 12;
+  }), "Instance menu is right-aligned and visible without horizontal scrolling");
+  assert(await evaluate(() => document.querySelector("[data-instance-menu]").hidden), "Message starts inside a closed menu");
+  await evaluate(() => {
+    const toggle = document.querySelector("[data-instance-menu-toggle]"); toggle.focus();
+    toggle.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+  });
+  assert(await evaluate(() => document.activeElement.matches('[data-instance-menu] [role="menuitem"]')));
+  await publish(rows);
+  assert(await evaluate(() => !document.querySelector("[data-instance-menu]").hidden && !!document.querySelector('[data-instance-menu-toggle][aria-expanded="true"]')),
+    "Live inventory updates preserve the open menu");
+  await evaluate(() => document.activeElement.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+  assert(await evaluate(() => document.querySelector("[data-instance-menu]").hidden && document.activeElement.matches("[data-instance-menu-toggle]")),
+    "Escape closes the menu and restores focus");
+  await evaluate(() => document.querySelector('[data-codex-pid="99"] [data-instance-menu-toggle]').click());
+  assert(await evaluate(() => {
+    const menu = document.querySelector("[data-instance-menu]").getBoundingClientRect();
+    return menu.width > 0 && menu.left >= 0 && menu.right <= innerWidth && menu.bottom <= innerHeight;
+  }), "Menu escapes the table scroller and stays in the viewport");
   window.showInactive(); await sleep(100);
   fs.writeFileSync(path.join(directory, "instance-message-actions.png"), (await window.webContents.capturePage()).toPNG()); window.hide();
-  const open = pid => evaluate(pid => document.querySelector(`[data-codex-pid="${pid}"] [data-message-codex]`).click(), pid);
+  await evaluate(() => document.querySelector("h2").dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })));
+  assert(await evaluate(() => document.querySelector("[data-instance-menu]").hidden), "Outside pointer closes the menu");
+  const open = pid => evaluate(pid => {
+    const toggle = document.querySelector(`[data-codex-pid="${pid}"] [data-instance-menu-toggle]`);
+    toggle.scrollIntoView({ block: "center" }); toggle.click();
+    document.querySelector("[data-instance-menu] [data-message-codex]").click();
+  }, pid);
   const read = () => evaluate(() => {
     const panel = document.querySelector("[data-codex-instance-composer]");
     return { hidden: panel.hidden, text: panel.querySelector("textarea").value, selected: panel.querySelector("select").value,

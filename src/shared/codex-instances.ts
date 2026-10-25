@@ -29,7 +29,12 @@ export interface CodexInstancesBridge {
   getCodexInstances(): Promise<CodexInstancesSnapshot>;
   refreshCodexInstances(): Promise<CodexInstancesSnapshot>;
   onCodexInstancesChanged(callback: (snapshot: CodexInstancesSnapshot) => void): () => void;
+  getCodexInstanceConversations?(target: CodexInstanceTarget): Promise<CodexInstanceConversation[]>;
+  sendCodexInstanceMessage?(target: CodexInstanceTarget, conversationId: string, message: string): Promise<import("./codex-message").CodexMessageReceipt>;
 }
+
+export interface CodexInstanceTarget { codexPid: number; codexStartedAt: string; }
+export interface CodexInstanceConversation { id: string; title: string; lastActiveAt: number; }
 
 export interface ProcessDescriptor {
   pid: number;

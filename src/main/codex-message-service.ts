@@ -25,9 +25,9 @@ export class CodexMessageService {
   constructor(private readonly createClient: () => Client = () => {
     if (process.platform !== "win32") throw new Error("Sending to Codex currently requires Windows.");
     return new CodexIpcClient();
-  }) {}
+  }, private readonly projectMessages?: { owns(id: string): boolean; sendExisting(id: string, message: string): Promise<CodexMessageReceipt> }) {}
 
-  async send(item: AttentionItem, message: unknown): Promise<CodexMessageReceipt> {
+  async send(item: AttentionItem, message: unknown, expectedOwner?: string): Promise<CodexMessageReceipt> {
     if (this.closed) throw new Error("Codex messaging is closed.");
     const sessionId = attentionCodexSession(item);
     if (!sessionId) throw new Error("This item has no Codex session. Open the conversation with Go.");
@@ -40,6 +40,7 @@ export class CodexMessageService {
       throw new Error(`Enter a message of 1 to ${MAX_CODEX_MESSAGE_LENGTH} characters.`);
     }
     if (this.sending.has(sessionId)) throw new Error("A message is already being sent to this Codex conversation.");
+    if (this.projectMessages?.owns(sessionId)) return this.projectMessages.sendExisting(sessionId, message);
     this.sending.add(sessionId);
     let client: Client | undefined;
     try {
@@ -50,6 +51,7 @@ export class CodexMessageService {
       result(discovery, "thread-owner-discovery");
       const owner = discovery.handledByClientId;
       if (!owner) throw new Error("Codex did not identify the conversation owner.");
+      if (expectedOwner && owner !== expectedOwner) throw new Error("This conversation moved to another Codex client. Refresh conversations before sending.");
       const id = randomUUID();
       const input = [{ type: "text", text: message, text_elements: [] }];
       const restoreMessage = { id, text: message, createdAt: Date.now(), context: {

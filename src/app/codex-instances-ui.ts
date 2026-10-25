@@ -1,5 +1,6 @@
 import { CodexInstance, CodexInstancesBridge, CodexInstancesSnapshot } from "../shared/codex-instances";
 import { codexActivityIcon, codexActivityLegend } from "./codex-activity-icon";
+import { mountCodexInstanceComposer } from "./codex-instance-composer";
 
 export type CodexSortColumn = "title" | "workspace" | "vscodePid" | "codexPid" | "lastFileUpdatedAt";
 export type CodexSortDirection = "ascending" | "descending";
@@ -63,14 +64,18 @@ export function mountCodexInstancesUI(root: HTMLElement, bridge: CodexInstancesB
     return { cell, button, key, label };
   });
   const body = table.createTBody();
+  const messaging = !!bridge.getCodexInstanceConversations && !!bridge.sendCodexInstanceMessage;
+  const composerRoot = document.createElement("section");
+  const composer = mountCodexInstanceComposer(composerRoot, bridge);
   scroller.appendChild(table);
   const empty = document.createElement("p");
 
-  root.append(heading, codexActivityLegend(), status, error, refresh, empty, scroller);
+  root.append(heading, codexActivityLegend(), status, error, refresh, composerRoot, empty, scroller);
 
   function render(snapshot: CodexInstancesSnapshot): void {
     if (disposed) return;
     latest = snapshot;
+    composer.update(snapshot);
     headers.forEach(({ cell, button, key, label }) => {
       const active = key === sortColumn;
       cell.setAttribute("aria-sort", active ? sortDirection : "none");
@@ -106,6 +111,12 @@ export function mountCodexInstancesUI(root: HTMLElement, bridge: CodexInstancesB
           if (updatedText === "Unavailable") cell.title = "No confirmed file edit found for this Codex process, or its edit history is unavailable.";
         }
       });
+      if (messaging) {
+        const cell = row.cells[0], message = document.createElement("button");
+        message.type = "button"; message.textContent = "Message"; message.dataset.messageCodex = "";
+        message.setAttribute("aria-label", `Message ${instance.title || instance.workspace || "Codex"} (PID ${instance.codexPid})`);
+        message.addEventListener("click", () => composer.open(instance)); cell.appendChild(message);
+      }
     });
   }
 
@@ -127,5 +138,5 @@ export function mountCodexInstancesUI(root: HTMLElement, bridge: CodexInstancesB
       if (!disposed) { error.textContent = String(reason); refresh.disabled = false; }
     });
   });
-  return () => { disposed = true; clearInterval(activityExpiry); unsubscribe(); root.replaceChildren(); };
+  return () => { disposed = true; clearInterval(activityExpiry); unsubscribe(); composer.dispose(); root.replaceChildren(); };
 }

@@ -10,6 +10,8 @@ contextBridge.exposeInMainWorld("ipcComms", {
   getCodexInstances: () => ipcRenderer.invoke("codex-instances-list"),
   refreshCodexInstances: () => ipcRenderer.invoke("codex-instances-refresh"),
   onCodexInstancesChanged: (callback) => subscribe("codex-instances-changed", callback),
+  getCodexInstanceConversations: (target) => ipcRenderer.invoke("codex-instance-conversations", target),
+  sendCodexInstanceMessage: (target, conversationId, message) => ipcRenderer.invoke("codex-instance-message", target, conversationId, message),
   getTitlebar: () => ipcRenderer.invoke("titlebar-get"),
   onTitlebarChanged: (callback) => subscribe("titlebar-changed", callback),
   titlebarAction: (action) => ipcRenderer.send("titlebar-action", action),

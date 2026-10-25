@@ -1,5 +1,6 @@
-import { app, BrowserWindow, globalShortcut, ipcMain, shell } from "electron";
+import { app, BrowserWindow, dialog, globalShortcut, ipcMain, shell } from "electron";
 import path from "path";
+import { createHash } from "crypto";
 import { AttentionService } from "./attention-service";
 import { createAttentionApi } from "./attention-api";
 import { DesktopService } from "./desktop-service";
@@ -26,6 +27,8 @@ import { CodexQuestionService } from "./codex-question-service";
 import { externalLinkHandler } from "./external-links";
 import { attentionOperations } from "./attention-operations";
 import { startAttentionWeb } from "./attention-web";
+import { CodexInstanceMessages } from "./codex-instance-messages";
+import { CodexProjectSessions } from "./codex-project-sessions";
 
 require("dotenv").config();
 
@@ -76,7 +79,36 @@ export const applicationReady = singleInstance ? app.whenReady().then(async () =
     verifyProcesses: instances => desktop.areProcessesRunning(instances.map(instance => ({ pid: instance.codexPid, startedAt: instance.codexStartedAt }))),
   }) });
   const codexAttention = new CodexAttention(desktop, codexInstances);
-  const codexMessages = new CodexMessageService();
+  const codexProjects = new CodexProjectSessions({ processes: () => desktop.listProcesses(),
+    completed: (instance, sessionId, turnId, text, status) => {
+      const id = "completion-" + createHash("sha256").update(JSON.stringify([sessionId, turnId])).digest("hex");
+      void attention.upsert("codex", id, {
+        title: `Codex ${status === "completed" ? "done" : status}: ${instance.title || "project"}`,
+        codexSessionId: sessionId, project: instance.workspace, description: text.slice(0, 18000), sound: "icq",
+        origin: { kind: "vscode-codex", codexPid: instance.codexPid, codexStartedAt: instance.codexStartedAt,
+          vscodePid: instance.vscodePid, vscodeStartedAt: instance.vscodeStartedAt, title: instance.title },
+      }, { createOnly: true }).catch(error => { if (error.status !== 412) console.error("Cannot publish Codex project result:", error); });
+    },
+    interaction: async (instance, method, params) => {
+      if (["item/commandExecution/requestApproval", "item/fileChange/requestApproval"].includes(method)) {
+        const response = await dialog.showMessageBox(mainWindow, { type: "question", title: `Codex: ${instance.title || instance.workspace}`,
+          message: method.includes("commandExecution") ? "Allow this Codex command?" : "Allow these Codex file changes?",
+          detail: [params.command, params.reason, params.cwd, params.grantRoot,
+            params.additionalPermissions && JSON.stringify(params.additionalPermissions),
+            params.networkApprovalContext && JSON.stringify(params.networkApprovalContext)].filter(Boolean).join("\n"),
+          buttons: ["Decline", "Allow once"], defaultId: 0, cancelId: 0 });
+        return { decision: response.response === 1 ? "accept" : "decline" };
+      }
+      const message = `Codex needs ${method}. Open this project conversation in VS Code to continue.`;
+      await attention.upsert("codex", `project-interaction-${params.threadId || instance.codexPid}`, {
+        title: `Codex needs input: ${instance.title || "project"}`, project: instance.workspace, description: message,
+        ...(typeof params.threadId === "string" ? { codexSessionId: params.threadId } : {}), sound: "icq" });
+      throw new Error(message);
+    },
+  });
+  const codexMessages = new CodexMessageService(undefined, codexProjects);
+  const codexInstanceMessages = new CodexInstanceMessages({ inventory: codexInstances, messages: codexMessages, projects: codexProjects,
+    verifyProcesses: identities => desktop.areProcessesRunning(identities) });
   const codexQuestions = new CodexQuestionService(codexMessages);
   const operations = attentionOperations(attention, codexMessages, codexQuestions);
   const unsubscribeCodex = codexInstances.onChanged(snapshot => {
@@ -200,6 +232,12 @@ export const applicationReady = singleInstance ? app.whenReady().then(async () =
   ipcMain.handle("desktop-windows", () => desktop.listWindows());
   ipcMain.handle("codex-instances-list", () => codexInstances.list());
   ipcMain.handle("codex-instances-refresh", () => codexInstances.refresh());
+  ipcMain.handle("codex-instance-conversations", (event, target) => {
+    requireInbox(event); return codexInstanceMessages.conversations(target);
+  });
+  ipcMain.handle("codex-instance-message", (event, target, conversationId, message) => {
+    requireInbox(event); return codexInstanceMessages.send(target, conversationId, message);
+  });
   ipcMain.handle("shortcuts-list", () => shortcuts.list());
   ipcMain.handle("shortcuts-set", (_event, key: ShortcutKey, accelerator: string) => shortcuts.set(key, accelerator));
   ipcMain.handle("navigation-run", () => navigatePending());
@@ -279,6 +317,8 @@ export const applicationReady = singleInstance ? app.whenReady().then(async () =
     codexInstances.close();
     codexDiscovery.close();
     codexMessages.close();
+    codexInstanceMessages.close();
+    codexProjects.close();
     shortcuts.close();
     attention.close();
     bookmarks.close();
@@ -286,7 +326,7 @@ export const applicationReady = singleInstance ? app.whenReady().then(async () =
     server.close();
     web?.close();
   });
-  return { attention, desktop, mainWindow, tray, server, shortcuts, navigatePending, bookmarks, captureBookmarks, codexInstances, codexMessages };
+  return { attention, desktop, mainWindow, tray, server, shortcuts, navigatePending, bookmarks, captureBookmarks, codexInstances, codexMessages, codexInstanceMessages, codexProjects };
 }) : Promise.resolve(undefined);
 
 applicationReady.catch((error) => {

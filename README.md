@@ -114,6 +114,32 @@ than 30 seconds show Unknown. This uses local Codex internals (stream version 11
 so older extensions may show Unknown. No messages, approvals, or turns are sent.
 Quit and reopen Tray Platform after building to load the activity reader.
 
+Choose **Message** beside an instance to compose a message. The picker lists saved
+conversations in that project, including idle conversations with no recent
+execution history. Leave **New conversation** selected to create a conversation
+and send, or select an existing conversation. **Send message** and Ctrl+Enter work
+in either case. Open conversations use their existing Codex client; new or closed
+conversations run in a Tray-owned Codex app-server in the selected project using
+the installed runtime and normal Codex configuration. Tray preserves configured
+approval and sandbox policies. Command/file approvals appear as desktop dialogs;
+other unsupported interactive requests produce an inbox notice to continue in
+VS Code. Responses appear in the Attention Inbox and can receive follow-ups there.
+Keep Tray Platform running while its conversations work; quitting stops its runtimes.
+Single local project folders are supported. Closed or restarted instance targets
+fail visibly. New conversations remain selected after sending, so subsequent
+messages continue the same conversation.
+Drafts survive sorting, activity updates, closing the composer, and switching
+instances. They are kept in memory until Tray Platform reloads or quits.
+
+Validate with `yarn electron dev-infrastructure/smoke-codex-instance-messages.cjs`
+after building. The smoke exercises the real desktop/preload path with isolated
+Codex delivery fixtures, including conversation selection and draft retention.
+`CODEX_CLI=<installed codex.exe> node dev-infrastructure/smoke-codex-project-sessions.cjs`
+checks thread creation, saved-thread resumption, steering, and response delivery
+against the installed runtime with isolated history and a local fixture provider.
+The background runtime uses the documented
+[Codex app-server protocol](https://learn.chatgpt.com/docs/app-server).
+
 ## Codex question notifications
 
 ### Install for your user

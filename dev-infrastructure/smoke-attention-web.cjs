@@ -53,12 +53,59 @@ async function run() {
   assert.equal(await evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   assert.equal(await evaluate(() => [...document.querySelectorAll("article button")].filter(button => button.textContent === "Go" && !button.hidden).length), 0);
   await wait("questions", () => evaluate(() => document.querySelectorAll('[data-codex-question] fieldset').length === 2));
+  const cardState = id => evaluate(id => {
+    const card = [...document.querySelectorAll("article")].find(node => node.dataset.attentionKey === JSON.stringify(["codex", id]));
+    const body = card.querySelector("[data-attention-body]"), toggle = card.querySelector("[data-attention-disclosure]");
+    return { expanded: toggle.getAttribute("aria-expanded") === "true", hidden: body.hidden,
+      visible: body.getBoundingClientRect().height > 0, text: card.querySelector('[data-codex-message] textarea')?.value,
+      questionDraft: card.querySelector('textarea[data-question-index="1"]')?.value };
+  }, id);
+  const toggleCard = id => evaluate(id => {
+    const card = [...document.querySelectorAll("article")].find(node => node.dataset.attentionKey === JSON.stringify(["codex", id]));
+    const toggle = card.querySelector("[data-attention-disclosure]"); toggle.scrollIntoView({ block: "center" }); toggle.click();
+  }, id);
+  for (const width of [360, 412]) {
+    window.setSize(width, 900); await sleep(60);
+    assert(await evaluate(() => document.documentElement.scrollWidth <= innerWidth
+      && [...document.querySelectorAll("article")].every(card => card.getBoundingClientRect().height < 100
+        && card.querySelector("[data-attention-body]").hidden)), "Inbox cards start with only their title row at phone widths");
+  }
+  window.showInactive(); await sleep(100);
+  fs.writeFileSync(path.join(directory, "phone-collapsed.png"), (await window.webContents.capturePage()).toPNG()); window.hide();
+  await toggleCard("question-fixture");
+  assert((await cardState("question-fixture")).visible && (await cardState(completion)).hidden, "Each card expands independently");
+  await evaluate(() => { const input = document.querySelector('textarea[data-question-index="1"]'); input.value = "Retain my second answer"; input.dispatchEvent(new Event("input", { bubbles: true })); });
+  await toggleCard("question-fixture"); await toggleCard("question-fixture");
+  assert.equal((await cardState("question-fixture")).questionDraft, "Retain my second answer", "Collapse preserves answer drafts");
   await evaluate(() => document.querySelector('[data-codex-question] fieldset button').click());
   await wait("partial answer", () => answered.length === 1); assert.equal(attention.get("codex", "question-fixture").state, "pending");
+  assert((await cardState("question-fixture")).expanded, "Answering does not collapse the card");
+  await toggleCard(completion);
   const type = text => evaluate(text => { const card = [...document.querySelectorAll("article")].find(card => card.querySelector("h3").textContent.includes("PWA fixture")); const input = card.querySelector("textarea"); input.value = text; input.dispatchEvent(new Event("input", { bubbles: true })); }, text);
   await type("A retained mobile draft");
+  await toggleCard(completion);
+  await evaluate(id => [...document.querySelectorAll("article")].find(node => node.dataset.attentionKey === JSON.stringify(["codex", id])).querySelector("[data-attention-disclosure]").focus(), completion);
+  window.webContents.sendInputEvent({ type: "keyDown", keyCode: "Space" });
+  window.webContents.sendInputEvent({ type: "keyUp", keyCode: "Space" });
+  await wait("keyboard expansion", async () => (await cardState(completion)).visible);
+  window.webContents.sendInputEvent({ type: "keyDown", keyCode: "Enter" });
+  window.webContents.sendInputEvent({ type: "char", keyCode: "\r" });
+  window.webContents.sendInputEvent({ type: "keyUp", keyCode: "Enter" });
+  await wait("keyboard collapse", async () => (await cardState(completion)).hidden);
+  assert.equal((await cardState(completion)).text, "A retained mobile draft");
+  await toggleCard(completion);
+  await evaluate(() => document.querySelector('nav[aria-label="Attention views"] button:nth-child(2)').click());
+  await evaluate(() => document.querySelector('nav[aria-label="Attention views"] button:first-child').click());
+  await evaluate(() => document.querySelector("#tab-codex-instances").click());
+  await evaluate(() => document.querySelector("#tab-attention-inbox").click());
+  assert((await cardState(completion)).visible && (await cardState("question-fixture")).visible, "View and section changes retain expansion");
+  assert.equal(sent.length, 0, "Collapsing and expanding never sends a draft");
   await attention.upsert("other", "new", { title: "Concurrent desktop update" });
   await wait("SSE update", () => evaluate(() => document.querySelectorAll("article").length === 3));
+  assert(await evaluate(() => [...document.querySelectorAll("article")].find(card => card.querySelector("h3").textContent === "Concurrent desktop update")
+    .querySelector("[data-attention-body]").hidden), "Incoming items start collapsed");
+  assert((await cardState(completion)).visible && (await cardState("question-fixture")).visible, "Live updates preserve expansion");
+  assert.equal((await cardState("question-fixture")).questionDraft, "Retain my second answer");
   assert.equal(await evaluate(() => [...document.querySelectorAll("textarea")].some(input => input.value === "A retained mobile draft")), true);
   const send = () => evaluate(() => [...document.querySelectorAll("article")].find(card => card.querySelector("h3").textContent.includes("PWA fixture")).querySelector('[data-codex-message] button').click());
   await send(); await wait("delivery acknowledged", () => evaluate(() => [...document.querySelectorAll('[data-codex-message] [role="status"]')].some(node => node.textContent.includes("follow-up"))));
@@ -74,9 +121,16 @@ async function run() {
   await evaluate(() => document.querySelector("#check-delivery").click());
   await wait("receipt reconciliation", () => evaluate(() => document.querySelector("#delivery-status").textContent.includes("Still unconfirmed")));
   await wait("service worker ready", () => evaluate(async () => Boolean((await navigator.serviceWorker.getRegistration())?.active)));
+  await toggleCard(completion);
   await attention.setState("codex", completion, "done");
   await evaluate(id => { location.hash = "item=" + encodeURIComponent(JSON.stringify(["codex", id])); }, completion);
   await wait("notification deep link selects Done", () => evaluate(() => document.querySelector('nav[aria-label="Attention views"] button[aria-pressed="true"]').textContent.startsWith("Done")));
+  assert((await cardState(completion)).visible, "Notification deep links expand their target card");
+  await toggleCard(completion);
+  await attention.upsert("codex", completion, { title: "Codex done: Updated PWA fixture", project: "tray-platform", codexSessionId: "fixture", description: "Ready for your next instruction." });
+  await wait("later update loaded", () => evaluate(() => [...document.querySelectorAll("article h3")].some(node => node.textContent === "Codex done: Updated PWA fixture")));
+  assert((await cardState(completion)).hidden, "Later updates do not reopen a manually collapsed deep-link target");
+  await toggleCard(completion);
   window.showInactive(); await sleep(200);
   fs.writeFileSync(path.join(directory, "phone.png"), (await window.webContents.capturePage()).toPNG()); window.hide();
   // Reload under worker control, then simulate network loss. No cached inbox API.
@@ -88,7 +142,7 @@ async function run() {
   await window.loadURL(config.origin).catch(() => {});
   await wait("offline shell", () => evaluate(() => document.body.textContent.includes("Your desktop is unavailable")));
   assert.equal(errors.filter(message => !/Failed to load resource|ERR_INTERNET_DISCONNECTED/.test(message)).length, 0, errors.join("\n"));
-  fs.writeFileSync(path.join(directory, "result.json"), JSON.stringify({ passed: true, checks: ["browser without Electron bridge", "phone layout", "partial question", "SSE draft retention", "message receipt", "uncertain delivery deduplication", "worker registration", "notification Done deep link", "offline shell"], directory }, null, 2));
+  fs.writeFileSync(path.join(directory, "result.json"), JSON.stringify({ passed: true, checks: ["browser without Electron bridge", "collapsed phone layout", "keyboard disclosure", "partial question", "collapse and tab draft retention", "SSE expansion retention", "message receipt", "uncertain delivery deduplication", "worker registration", "notification Done deep link expands", "offline shell"], directory }, null, 2));
   console.log("PASS attention PWA browser smoke:", directory);
 }
 const watchdog = setTimeout(() => { console.error("PWA smoke timed out"); app.exit(1); }, 90000);

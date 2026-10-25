@@ -369,7 +369,10 @@ separate temporary user-data directory; the live inbox is not used.
 ## Android attention PWA over Tailscale
 
 The phone has **Attention Inbox** and **Codex Instances** tabs. The inbox supports
-Pending/Snoozed/Done, question answers, and Codex instructions. The instance tab
+Pending/Snoozed/Done, question answers, and Codex instructions. Inbox cards start
+collapsed to their title row; tap it to reveal the content and actions. Expansion
+and drafts survive tab switches and live updates. Opening a notification expands
+its target card. The instance tab
 shows the desktop's live activity icons and legend, project and process details,
 sorting, and Refresh. Phone entries start collapsed to their activity icon and
 title; tap the title row to show or hide the folder, PIDs, and last-update details.

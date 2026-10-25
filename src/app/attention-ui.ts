@@ -6,6 +6,8 @@ import { attentionContent } from "./attention-content";
 import { renderAttentionMarkdown } from "./attention-markdown";
 import { attentionFileHref } from "../shared/attention-link";
 
+let nextAttentionBodyId = 0;
+
 export function visibleAttentionItems(items: AttentionItem[], state: AttentionState): AttentionItem[] {
   return items.filter(item => item.state === state).sort((a, b) =>
     b.createdAt - a.createdAt || a.source.localeCompare(b.source) || a.id.localeCompare(b.id));
@@ -61,7 +63,7 @@ export function mountAttentionUI(root: HTMLElement, bridge: AttentionBridge, opt
   tabs.setAttribute("aria-label", "Attention views");
   const list = element("div");
   const empty = element("p");
-  const cards = new Map<string, { node: HTMLElement; update(item: AttentionItem): void; dispose(): void }>();
+  const cards = new Map<string, { node: HTMLElement; expand(): void; update(item: AttentionItem): void; dispose(): void }>();
   const tabButtons = new Map<AttentionState, HTMLButtonElement>();
   let revealedKey = "";
   (["pending", "snoozed", "done"] as AttentionState[]).forEach(state => {
@@ -78,6 +80,26 @@ export function mountAttentionUI(root: HTMLElement, bridge: AttentionBridge, opt
     node.dataset.attentionKey = attentionKey(item);
 
     const title = element("h3");
+    const phone = options.navigation === "phone";
+    const titleText = phone ? element("span") : title;
+    const body = phone ? element("div") : node;
+    const disclosure = phone ? button("", () => setExpanded(body.hidden)) : undefined;
+    function setExpanded(expanded: boolean) {
+      if (!disclosure) return;
+      body.hidden = !expanded; disclosure.setAttribute("aria-expanded", String(expanded));
+    }
+    node.appendChild(title);
+    if (disclosure) {
+      node.dataset.collapsibleAttention = "";
+      body.dataset.attentionBody = ""; body.id = `attention-body-${++nextAttentionBodyId}`;
+      disclosure.dataset.attentionDisclosure = ""; disclosure.setAttribute("aria-controls", body.id);
+      titleText.dataset.attentionTitle = "";
+      const chevron = element("span"); chevron.dataset.attentionChevron = ""; chevron.setAttribute("aria-hidden", "true");
+      chevron.innerHTML = '<svg viewBox="0 0 16 16" width="16" height="16"><path d="m6 3 5 5-5 5"/></svg>';
+      disclosure.append(titleText, chevron); title.appendChild(disclosure); node.appendChild(body);
+      node.addEventListener("click", event => { if (event.target === node || event.target === title) disclosure.click(); });
+      setExpanded(false);
+    }
     const metadata = element("p");
     metadata.dataset.muted = "";
     const origin = element("p");
@@ -145,20 +167,21 @@ export function mountAttentionUI(root: HTMLElement, bridge: AttentionBridge, opt
     const reopen = button("Reopen", () => void perform(() => bridge.setAttentionState(item.source, item.id, "pending")));
     actions.append(go, phoneLink, snooze, snoozeAction, done, reopen);
     const questionRoot = element("section");
-    node.append(title, metadata, origin, description, questionRoot, destination, progress, failure, actions);
+    body.append(metadata, origin, description, questionRoot, destination, progress, failure, actions);
     const markdownOptions = options.navigation === "phone" ? { localLink: (href: string) => attentionFileHref(item, href) } : {};
     const question = mountCodexQuestionUI(questionRoot, bridge, item, () => { questionLoaded = true; refresh(); }, markdownOptions);
     const messageRoot = element("section");
-    node.appendChild(messageRoot);
+    body.appendChild(messageRoot);
     const message = mountCodexMessageUI(messageRoot, bridge, item, { phone: options.navigation === "phone" });
     const detailRoot = element("section");
-    node.appendChild(detailRoot);
+    body.appendChild(detailRoot);
     const details = options.mountDetails?.(detailRoot, item);
-    node.appendChild(diagnostics);
+    body.appendChild(diagnostics);
 
     function refresh() {
       const content = attentionContent(item);
-      title.textContent = content.title;
+      titleText.textContent = content.title;
+      if (disclosure) titleText.title = content.title;
       metadata.textContent = [item.source, item.project, new Date(item.createdAt).toLocaleString(),
         item.state === "snoozed" && item.snoozedUntil ? `Snoozed until ${new Date(item.snoozedUntil).toLocaleString()}` : ""].filter(Boolean).join(" · ");
       if (renderedDescription !== content.description) {
@@ -185,7 +208,7 @@ export function mountAttentionUI(root: HTMLElement, bridge: AttentionBridge, opt
       [snooze, snoozeAction, done, reopen].forEach(control => { control.disabled = busy; });
     }
     refresh();
-    return { node, update(next: AttentionItem) { item = next; refresh(); question.update(item); message.update(item); details?.update(item); }, dispose() { unsubscribeProgress?.(); question.dispose(); message.dispose(); details?.dispose(); } };
+    return { node, expand() { setExpanded(true); }, update(next: AttentionItem) { item = next; refresh(); question.update(item); message.update(item); details?.update(item); }, dispose() { unsubscribeProgress?.(); question.dispose(); message.dispose(); details?.dispose(); } };
   }
 
   function render() {
@@ -219,7 +242,10 @@ export function mountAttentionUI(root: HTMLElement, bridge: AttentionBridge, opt
       const position = list.children[index];
       if (position !== entry.node) list.insertBefore(entry.node, position || null);
     });
-    if (reveal) cards.get(targetKey)?.node.scrollIntoView({ block: "start" });
+    if (reveal) {
+      const entry = cards.get(targetKey);
+      entry?.expand(); entry?.node.scrollIntoView({ block: "start" });
+    }
   }
 
   const unsubscribe = bridge.onAttentionChanged(next => { revision++; snapshot = next; render(); });

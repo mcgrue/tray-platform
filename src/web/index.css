@@ -25,6 +25,15 @@ label > input, label > select, label > textarea { font-size: 16px; }
 .notifications-header button { margin: 0; }
 #delivery { padding: 12px; margin-bottom: 16px; border: 1px solid var(--destructive); border-radius: var(--radius); }
 article { scroll-margin-top: 12px; }
+[data-collapsible-attention] { padding: 16px; }
+[data-collapsible-attention] > h3 { margin: 0; }
+[data-attention-disclosure] { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; min-height: 44px; margin: 0; padding: 6px 0; text-align: left; font-size: 15px; font-weight: 600; background: transparent; border-color: transparent; box-shadow: none; }
+[data-attention-title] { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+[data-attention-chevron] { display: flex; flex-shrink: 0; margin-left: auto; color: var(--muted-foreground); }
+[data-attention-chevron] svg { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+[data-attention-disclosure][aria-expanded="true"] [data-attention-chevron] { transform: rotate(90deg); }
+[data-attention-body] > [data-muted]:first-child { font-size: 12px; }
+[data-attention-body] > details, [data-attention-body] > section > details { border-top: 1px solid var(--border); padding-top: 8px; }
 [data-card-actions] > a { padding: 10px; color: var(--primary); }
 nav[aria-label="Attention views"] { display: flex; flex-wrap: wrap; }
 nav[aria-label="Attention views"] button { flex: 1; white-space: nowrap; }

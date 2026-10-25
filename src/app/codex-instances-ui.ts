@@ -16,7 +16,8 @@ export function sortCodexInstances(instances: readonly CodexInstance[], column: 
   });
 }
 
-export function mountCodexInstancesUI(root: HTMLElement, bridge: CodexInstancesBridge): () => void {
+export function mountCodexInstancesUI(root: HTMLElement, bridge: CodexInstancesBridge, options: { phone?: boolean } = {}): () => void {
+  if (options.phone) root.dataset.phoneInstances = "";
   let disposed = false;
   let revision = 0;
   let latest: CodexInstancesSnapshot | undefined;
@@ -64,6 +65,17 @@ export function mountCodexInstancesUI(root: HTMLElement, bridge: CodexInstancesB
     return { cell, button, key, label };
   });
   const body = table.createTBody();
+  const sortLabel = document.createElement("label"); sortLabel.dataset.instanceSort = ""; sortLabel.textContent = "Sort instances";
+  const sort = document.createElement("select");
+  for (const column of columns) for (const direction of ["ascending", "descending"] as const) {
+    const option = document.createElement("option"); option.value = `${column.key}:${direction}`;
+    option.textContent = `${column.label} (${direction})`; sort.appendChild(option);
+  }
+  sort.addEventListener("change", () => {
+    const [column, direction] = sort.value.split(":"); sortColumn = column as CodexSortColumn; sortDirection = direction as CodexSortDirection;
+    if (latest) render(latest);
+  });
+  sortLabel.appendChild(sort);
   const messaging = !!bridge.getCodexInstanceConversations && !!bridge.sendCodexInstanceMessage;
   const composerRoot = document.createElement("section");
   const composer = mountCodexInstanceComposer(composerRoot, bridge);
@@ -71,10 +83,12 @@ export function mountCodexInstancesUI(root: HTMLElement, bridge: CodexInstancesB
   const empty = document.createElement("p");
 
   root.append(heading, codexActivityLegend(), status, error, refresh, composerRoot, empty, scroller);
+  if (options.phone) scroller.before(sortLabel);
 
   function render(snapshot: CodexInstancesSnapshot): void {
     if (disposed) return;
     latest = snapshot;
+    sort.value = `${sortColumn}:${sortDirection}`;
     composer.update(snapshot);
     headers.forEach(({ cell, button, key, label }) => {
       const active = key === sortColumn;
@@ -100,6 +114,7 @@ export function mountCodexInstancesUI(root: HTMLElement, bridge: CodexInstancesB
       const updatedText = updated !== undefined && Number.isFinite(updated) ? new Date(updated).toLocaleString() : "Unavailable";
       [instance.title || "Window title unavailable", instance.workspace || "Folder unavailable", String(instance.vscodePid), String(instance.codexPid), updatedText].forEach((value, index) => {
         const cell = row.insertCell();
+        cell.dataset.label = columns[index].label;
         cell.textContent = value;
         if (index === 0) cell.prepend(codexActivityIcon(instance));
 

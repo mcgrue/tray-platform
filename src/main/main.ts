@@ -305,7 +305,8 @@ export const applicationReady = singleInstance ? app.whenReady().then(async () =
     playSound: (id) => sendAudio("play-sound", id),
     sayWords: (text) => sendAudio("say-words", text),
   });
-  const web = await startAttentionWeb(app.getPath("userData"), path.join(__dirname, "../web"), attention, operations)
+  const web = await startAttentionWeb(app.getPath("userData"), path.join(__dirname, "../web"), attention, operations,
+    { instances: codexInstances, messages: codexInstanceMessages })
     .catch(error => { console.error("Attention PWA unavailable:", error.message); return undefined; });
   app.on("before-quit", () => {
     quitting = true;

@@ -368,10 +368,23 @@ separate temporary user-data directory; the live inbox is not used.
 
 ## Android attention PWA over Tailscale
 
-The phone pane supports Pending/Snoozed/Done, question answers, and Codex
-instructions. The desktop must be awake with Tray Platform and the relevant
-Codex conversation running. Windows navigation is hidden; URL links open on the
-phone. Firefox and Chrome on Android are supported push clients.
+The phone has **Attention Inbox** and **Codex Instances** tabs. The inbox supports
+Pending/Snoozed/Done, question answers, and Codex instructions. The instance tab
+shows the desktop's live activity icons and legend, project and process details,
+sorting, and Refresh. Its phone-sized cards include **Message**: select a saved
+project conversation or leave **New conversation** selected to create and send.
+Drafts survive tab switches and live updates. Notification links switch back to
+the inbox without clearing instance drafts. Sends use persistent delivery
+receipts; **Check delivery** recovers a lost acknowledgement without resending or
+creating a second conversation, and preserves edits made after the original send.
+
+The desktop must be awake with Tray Platform running. New or closed project
+conversations run in the desktop's background Codex runtime as described above.
+Disconnected controls are disabled; reconnecting never replays messages. Windows
+navigation is hidden; URL links open on the phone. Firefox and Chrome on Android
+are supported push clients. Restart Tray Platform and reload the phone page after
+building this update. Validate with
+`yarn electron dev-infrastructure/smoke-web-codex-instances.cjs` after building.
 
 Item descriptions and question prompts render Markdown on desktop and phone: headings, lists,
 emphasis, quotes, tables, links, and code blocks. Plain-text line breaks are

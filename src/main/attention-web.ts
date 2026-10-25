@@ -9,6 +9,13 @@ import { WebReceipts } from "./web-receipts";
 import { WebPushService } from "./web-push-service";
 import { readWebStore } from "./web-store";
 import { attentionFileResponse } from "./attention-files";
+import { CodexInstanceService } from "./codex-instance-service";
+import { CodexInstanceMessages } from "./codex-instance-messages";
+
+export interface WebCodexInstances {
+  instances: Pick<CodexInstanceService, "list" | "refresh" | "onChanged">;
+  messages: Pick<CodexInstanceMessages, "conversations" | "send">;
+}
 
 export interface AttentionWebConfig { origin: string; allowedUsers: string[]; port: number; }
 export function validateWebConfig(value: any): AttentionWebConfig {
@@ -31,7 +38,7 @@ const assetTypes: Record<string, string> = {
 
 export function createAttentionWeb(options: {
   config: AttentionWebConfig; attention: AttentionService; operations: ReturnType<typeof attentionOperations>;
-  receipts: WebReceipts; push: WebPushService; assets: string;
+  receipts: WebReceipts; push: WebPushService; assets: string; codex?: WebCodexInstances;
 }) {
   const { config, attention, operations, receipts, push } = options;
   const secret = randomBytes(32), streams = new Set<ServerResponse>();
@@ -50,12 +57,14 @@ export function createAttentionWeb(options: {
     }
     return user;
   };
-  const writeSnapshot = (res: ServerResponse) => {
+  const writeEvent = (res: ServerResponse, event: string, value: unknown) => {
     if (res.destroyed || res.writableEnded) return;
     if (res.writableLength > 1024 * 1024) { res.destroy(); return; }
-    res.write(`event: attention\ndata: ${JSON.stringify(attention.list())}\n\n`);
+    res.write(`event: ${event}\ndata: ${JSON.stringify(value)}\n\n`);
   };
+  const writeSnapshot = (res: ServerResponse) => writeEvent(res, "attention", attention.list());
   const unsubscribe = attention.onChanged(() => streams.forEach(writeSnapshot));
+  const unsubscribeInstances = options.codex?.instances.onChanged(snapshot => streams.forEach(res => writeEvent(res, "codex-instances", snapshot)));
   const heartbeat = setInterval(() => streams.forEach(res => {
     if (res.writableLength > 1024 * 1024) res.destroy(); else res.write(": heartbeat\n\n");
   }), 20000); heartbeat.unref?.();
@@ -76,7 +85,9 @@ export function createAttentionWeb(options: {
       if (req.method === "GET" && pathname === "/api/events") {
         if (streams.size >= 20) throw new AttentionError("Too many open panes", 429);
         res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-store", Connection: "keep-alive", "X-Accel-Buffering": "no" });
-        streams.add(res); res.on("close", () => streams.delete(res)); writeSnapshot(res); return;
+        streams.add(res); res.on("close", () => streams.delete(res)); writeSnapshot(res);
+        if (options.codex) writeEvent(res, "codex-instances", options.codex.instances.list());
+        return;
       }
       if (req.method === "GET" && pathname.startsWith("/api/requests/")) {
         const receipt = receipts.get(user, pathname.slice("/api/requests/".length));
@@ -84,6 +95,25 @@ export function createAttentionWeb(options: {
         sendJson(res, 200, receipt); return;
       }
       if (req.method === "GET" && pathname === "/api/push/public-key") { sendJson(res, 200, { publicKey: push.publicKey }); return; }
+      if (options.codex && pathname.startsWith("/api/codex-instances")) {
+        const { instances, messages } = options.codex;
+        if (pathname === "/api/codex-instances" && req.method === "GET") { sendJson(res, 200, instances.list()); return; }
+        if (pathname === "/api/codex-instances/refresh" && req.method === "POST") {
+          await readJson(req); sendJson(res, 200, await instances.refresh()); return;
+        }
+        const route = /^\/api\/codex-instances\/([1-9]\d*)\/([^/]+)\/(conversations|messages)$/.exec(pathname);
+        if (!route) throw new AttentionError("Unknown endpoint", 404);
+        let startedAt: string;
+        try { startedAt = decodeURIComponent(route[2]); } catch { throw new AttentionError("Invalid URL encoding"); }
+        const target = { codexPid: Number(route[1]), codexStartedAt: startedAt };
+        if (!Number.isSafeInteger(target.codexPid) || !Number.isFinite(Date.parse(startedAt))) throw new AttentionError("Invalid Codex instance");
+        if (route[3] === "conversations" && req.method === "GET") { sendJson(res, 200, await messages.conversations(target)); return; }
+        if (route[3] !== "messages" || req.method !== "POST") throw new AttentionError("Method not allowed", 405);
+        const input = await readJson(req);
+        const receipt = await receipts.run(user, input.requestId, { action: "instance-message", target, value: input.value }, () =>
+          messages.send(target, input.value?.conversationId, input.value?.message));
+        sendJson(res, 200, receipt); return;
+      }
       if (req.method === "POST" && pathname.startsWith("/api/push/")) {
         const input = await readJson(req);
         if (pathname === "/api/push/subscriptions") sendJson(res, 200, await push.subscribe(user, input.subscription));
@@ -120,12 +150,12 @@ export function createAttentionWeb(options: {
       else res.destroy();
     }
   })(); });
-  server.on("close", () => { clearInterval(heartbeat); unsubscribe(); });
+  server.on("close", () => { clearInterval(heartbeat); unsubscribe(); unsubscribeInstances?.(); });
   return { server, close() { streams.forEach(res => res.end()); server.close(); } };
 }
 
 export async function startAttentionWeb(userData: string, assets: string, attention: AttentionService,
-  operations: ReturnType<typeof attentionOperations>) {
+  operations: ReturnType<typeof attentionOperations>, codex?: WebCodexInstances) {
   const raw = await readWebStore<any>(path.join(userData, "web-config.json"), null);
   if (!raw || raw.enabled === false) return;
   const config = validateWebConfig(raw);
@@ -133,7 +163,7 @@ export async function startAttentionWeb(userData: string, assets: string, attent
   const push = new WebPushService(path.join(userData, "web-push.json"), config.origin, undefined, config.allowedUsers);
   await push.initialize(attention.list());
   const unsubscribe = attention.onChanged(snapshot => push.update(snapshot));
-  const web = createAttentionWeb({ config, attention, operations, receipts, push, assets });
+  const web = createAttentionWeb({ config, attention, operations, receipts, push, assets, codex });
   try { await new Promise<void>((resolve, reject) => { web.server.once("error", reject); web.server.listen(config.port, "127.0.0.1", resolve); }); }
   catch (error) { unsubscribe(); push.close(); web.close(); throw error; }
   console.log(`Attention PWA listening on 127.0.0.1:${config.port}; external origin ${config.origin}`);

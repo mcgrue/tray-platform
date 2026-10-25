@@ -1,9 +1,9 @@
 import { CodexInstance, CodexInstanceConversation, CodexInstancesBridge, CodexInstancesSnapshot } from "../shared/codex-instances";
-import { MAX_CODEX_MESSAGE_LENGTH } from "../shared/codex-message";
+import { CodexMessageReceipt, MAX_CODEX_MESSAGE_LENGTH } from "../shared/codex-message";
 
 interface Draft {
   instance: CodexInstance; conversations: CodexInstanceConversation[]; conversationId: string; text: string;
-  loading: boolean; sending: boolean; available: boolean; loaded: boolean; selectionMissing: boolean; status: string; error: string;
+  loading: boolean; sending: boolean; sendRevision: number; available: boolean; loaded: boolean; selectionMissing: boolean; status: string; error: string;
 }
 const identity = (row: CodexInstance) => JSON.stringify([row.codexPid, row.codexStartedAt]);
 const target = (row: CodexInstance) => ({ codexPid: row.codexPid, codexStartedAt: row.codexStartedAt });
@@ -32,6 +32,17 @@ export function mountCodexInstanceComposer(root: HTMLElement, bridge: CodexInsta
   const error = document.createElement("p"); error.setAttribute("role", "alert");
   form.append(conversationLabel, refresh, messageLabel, hint, send, close, status, error);
   root.append(heading, context, form);
+  const unsubscribeRecovered = bridge.onRecoveredCodexInstanceMessage?.(delivery => {
+    const draft = drafts.get(JSON.stringify([delivery.target.codexPid, delivery.target.codexStartedAt]));
+    if (!draft || disposed) return;
+    draft.sendRevision++; draft.sending = false;
+    if (delivery.message !== undefined && draft.text === delivery.message && draft.conversationId === delivery.conversationId) {
+      acknowledge(draft, delivery.receipt);
+    } else {
+      draft.error = ""; draft.status = "Previous message delivery confirmed. Your current draft is preserved.";
+      if (active === draft) refreshUI();
+    }
+  });
 
   function renderChoices() {
     if (!active || disposed) return;
@@ -89,23 +100,31 @@ export function mountCodexInstanceComposer(root: HTMLElement, bridge: CodexInsta
   }
   async function submit() {
     const draft = active;
-    if (!draft || disposed || send.disabled || !bridge.sendCodexInstanceMessage) return;
+    if (!draft || disposed || send.matches(":disabled") || !bridge.sendCodexInstanceMessage) return;
+    const revision = ++draft.sendRevision;
     draft.sending = true; draft.error = ""; draft.status = "Sending to Codex…"; refreshUI();
     try {
-      const creating = !draft.conversationId;
       const receipt = await bridge.sendCodexInstanceMessage(target(draft.instance), draft.conversationId, draft.text);
-      if (disposed) return;
-      if (creating) {
-        draft.conversations.unshift({ id: receipt.sessionId, title: draft.text.slice(0, 100), lastActiveAt: Date.now() });
-        draft.conversationId = receipt.sessionId;
-        if (active === draft) renderChoices();
+      if (disposed || draft.sendRevision !== revision) return;
+      acknowledge(draft, receipt);
+    } catch (reason) { if (draft.sendRevision === revision) { draft.error = errorText(reason); draft.status = ""; } }
+    finally {
+      if (draft.sendRevision === revision) {
+        draft.sending = false; if (!disposed && active === draft) { refreshUI(); if (!root.hidden) input.focus(); }
       }
-      draft.text = "";
-      draft.status = creating ? "New conversation started. The response will appear in the Attention Inbox."
-        : receipt.delivery === "steered" ? "Sent to the active Codex turn." : "Sent to Codex as a follow-up.";
-      if (active === draft) input.value = "";
-    } catch (reason) { draft.error = errorText(reason); draft.status = ""; }
-    finally { draft.sending = false; if (!disposed && active === draft) { refreshUI(); if (!root.hidden) input.focus(); } }
+    }
+  }
+  function acknowledge(draft: Draft, receipt: CodexMessageReceipt) {
+    const creating = !draft.conversationId;
+    if (creating) {
+      draft.conversations.unshift({ id: receipt.sessionId, title: draft.text.slice(0, 100), lastActiveAt: Date.now() });
+      draft.conversationId = receipt.sessionId;
+      if (active === draft) renderChoices();
+    }
+    draft.text = ""; draft.error = "";
+    draft.status = creating ? "New conversation started. The response will appear in the Attention Inbox."
+      : receipt.delivery === "steered" ? "Sent to the active Codex turn." : "Sent to Codex as a follow-up.";
+    if (active === draft) { input.value = ""; refreshUI(); }
   }
   input.addEventListener("input", () => { if (active) { active.text = input.value; refreshUI(); } });
   select.addEventListener("change", () => { if (active) { active.conversationId = select.value; active.selectionMissing = false; active.status = ""; active.error = ""; refreshUI(); } });
@@ -120,7 +139,7 @@ export function mountCodexInstanceComposer(root: HTMLElement, bridge: CodexInsta
       if (disposed) return;
       const id = identity(instance);
       let draft = drafts.get(id);
-      if (!draft) { draft = { instance, conversations: [], conversationId: "", text: "", loading: false, sending: false,
+      if (!draft) { draft = { instance, conversations: [], conversationId: "", text: "", loading: false, sending: false, sendRevision: 0,
         available: true, loaded: false, selectionMissing: false, status: "", error: "" }; drafts.set(id, draft); }
       draft.instance = instance; draft.available = true; active = draft;
       root.hidden = false; input.value = draft.text; renderChoices(); refreshUI();
@@ -134,6 +153,6 @@ export function mountCodexInstanceComposer(root: HTMLElement, bridge: CodexInsta
       }
       refreshUI();
     },
-    dispose() { disposed = true; drafts.clear(); root.replaceChildren(); },
+    dispose() { disposed = true; unsubscribeRecovered?.(); drafts.clear(); root.replaceChildren(); },
   };
 }

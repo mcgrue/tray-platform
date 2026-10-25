@@ -1,12 +1,16 @@
 import { AttentionBridge, AttentionSnapshot, AttentionState, Destination } from "../shared/attention";
 import { CodexMessageReceipt } from "../shared/codex-message";
 import { CodexAnswerReceipt, CodexQuestion, CodexQuestionAnswer } from "../shared/codex-question";
+import { CodexInstanceConversation, CodexInstancesBridge, CodexInstancesSnapshot, CodexInstanceTarget, RecoveredCodexInstanceMessage } from "../shared/codex-instances";
 
 interface Receipt { state: "unknown" | "succeeded"; result?: any; error?: string; }
-export class WebAttentionBridge implements AttentionBridge {
+export class WebAttentionBridge implements AttentionBridge, CodexInstancesBridge {
   private token = "";
   private events?: EventSource;
   private listeners = new Set<(snapshot: AttentionSnapshot) => void>();
+  private instanceListeners = new Set<(snapshot: CodexInstancesSnapshot) => void>();
+  private recoveredInstances = new Set<(delivery: RecoveredCodexInstanceMessage) => void>();
+  private pendingValues = new Map<string, any>(); // Only in memory; never persist message text.
   private stopped = false;
   private pending = new Map<string, string>();
   private checking?: Promise<void>;
@@ -47,6 +51,10 @@ export class WebAttentionBridge implements AttentionBridge {
         try { const snapshot = JSON.parse((event as MessageEvent).data); this.publish(snapshot); if (authorized) this.connection(true); }
         catch { this.connection(false); }
       });
+      this.events.addEventListener("codex-instances", event => {
+        try { const snapshot = JSON.parse((event as MessageEvent).data); this.instanceListeners.forEach(listener => listener(snapshot)); }
+        catch { this.connection(false); }
+      });
       this.events.onerror = () => this.connection(false);
     } catch { this.connection(false); }
   }
@@ -67,6 +75,9 @@ export class WebAttentionBridge implements AttentionBridge {
   getAttentionQuestion(source: string, id: string) { return this.request<CodexQuestion[]>(this.route(source, id, "questions")); }
   private async deliver<T>(source: string, id: string, action: string, value: unknown): Promise<T> {
     const route = this.route(source, id, action);
+    return this.deliverRoute<T>(route, value);
+  }
+  private async deliverRoute<T>(route: string, value: unknown): Promise<T> {
     const previous = this.pending.get(route);
     if (previous) {
       throw new Error("A previous send needs checking. Use Check delivery above before sending another instruction.");
@@ -74,14 +85,36 @@ export class WebAttentionBridge implements AttentionBridge {
     const requestId = `${Date.now()}-${crypto.randomUUID()}`;
     this.pending.set(route, requestId);
     try { this.savePending(); } catch { this.pending.delete(route); throw new Error("Browser storage is unavailable; sending is disabled to prevent duplicate delivery."); }
+    this.pendingValues.set(route, value);
     let receipt: Receipt;
     try { receipt = await this.request<Receipt>(route, { requestId, value }); }
     catch { throw new Error("Delivery is unconfirmed. Use Check delivery above before sending again."); }
     if (receipt.state !== "succeeded") throw new Error(`${receipt.error || "Delivery was not confirmed"}. Check Codex before allowing another send.`);
-    this.pending.delete(route); this.savePending(); return receipt.result;
+    if (this.pending.get(route) === requestId) { this.pending.delete(route); this.pendingValues.delete(route); this.savePending(); }
+    return receipt.result;
   }
   sendAttentionMessage(source: string, id: string, message: string) { return this.deliver<CodexMessageReceipt>(source, id, "messages", message); }
   answerAttentionQuestion(source: string, id: string, answers: CodexQuestionAnswer[]) { return this.deliver<CodexAnswerReceipt>(source, id, "answers", answers); }
+  getCodexInstances() { return this.request<CodexInstancesSnapshot>("/api/codex-instances"); }
+  async refreshCodexInstances() {
+    const snapshot = await this.request<CodexInstancesSnapshot>("/api/codex-instances/refresh", {});
+    this.instanceListeners.forEach(listener => listener(snapshot)); return snapshot;
+  }
+  onCodexInstancesChanged(callback: (snapshot: CodexInstancesSnapshot) => void) {
+    this.instanceListeners.add(callback); return () => { this.instanceListeners.delete(callback); };
+  }
+  private instanceRoute(target: CodexInstanceTarget, action: string) {
+    return `/api/codex-instances/${target.codexPid}/${encodeURIComponent(target.codexStartedAt)}/${action}`;
+  }
+  getCodexInstanceConversations(target: CodexInstanceTarget) {
+    return this.request<CodexInstanceConversation[]>(this.instanceRoute(target, "conversations"));
+  }
+  sendCodexInstanceMessage(target: CodexInstanceTarget, conversationId: string, message: string) {
+    return this.deliverRoute<CodexMessageReceipt>(this.instanceRoute(target, "messages"), { conversationId, message });
+  }
+  onRecoveredCodexInstanceMessage(callback: (delivery: RecoveredCodexInstanceMessage) => void) {
+    this.recoveredInstances.add(callback); return () => { this.recoveredInstances.delete(callback); };
+  }
   get pendingCount() { return this.pending.size; }
   async checkDeliveries() {
     if (this.checking) return this.checking;
@@ -92,15 +125,20 @@ export class WebAttentionBridge implements AttentionBridge {
           this.pending.delete(route);
           const match = /^\/api\/attention\/([^/]+)\/([^/]+)\/(messages|answers)$/.exec(route);
           if (match) this.recovered.forEach(callback => callback({ source: decodeURIComponent(match[1]), id: decodeURIComponent(match[2]), action: match[3] as "messages" | "answers" }));
+          const instance = /^\/api\/codex-instances\/([1-9]\d*)\/([^/]+)\/messages$/.exec(route);
+          if (instance) this.recoveredInstances.forEach(callback => callback({ target: {
+            codexPid: Number(instance[1]), codexStartedAt: decodeURIComponent(instance[2]),
+          }, receipt: receipt.result, conversationId: this.pendingValues.get(route)?.conversationId, message: this.pendingValues.get(route)?.message }));
+          this.pendingValues.delete(route);
         }
       }
       this.savePending(); await this.refresh();
     })();
     try { await this.checking; } finally { this.checking = undefined; }
   }
-  allowAnotherSend() { this.pending.clear(); this.savePending(); }
+  allowAnotherSend() { this.pending.clear(); this.pendingValues.clear(); this.savePending(); }
   async goToAttention() { throw new Error("Desktop navigation is unavailable on the phone"); }
   async setAttentionDestination(_source: string, _id: string, _destination: Destination) { throw new Error("Edit destinations on the desktop"); }
   async listWindows() { return []; }
-  close() { this.stopped = true; this.events?.close(); }
+  close() { this.stopped = true; this.events?.close(); this.instanceListeners.clear(); this.recoveredInstances.clear(); this.pendingValues.clear(); }
 }

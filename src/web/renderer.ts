@@ -2,6 +2,8 @@ import "./index.css";
 import { mountAttentionUI } from "../app/attention-ui";
 import { WebAttentionBridge } from "./web-attention-bridge";
 import { mountWebHeader } from "./header-ui";
+import { mountCodexInstancesUI } from "../app/codex-instances-ui";
+import { mountSectionTabs } from "../app/section-tabs";
 
 const byId = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 let online = false, refreshing = false, requestRevision = 0;
@@ -17,7 +19,12 @@ const requestedItem = () => {
     return Array.isArray(value) && value.length === 2 && value.every(part => typeof part === "string") ? { source: value[0], id: value[1] } : undefined;
   } catch { return undefined; }
 };
-const dispose = mountAttentionUI(document.querySelector("main")!, bridge, { navigation: "phone", requestedItem, requestRevision: () => requestRevision });
+const tabs = mountSectionTabs(byId("section-tabs"), [
+  { id: "attention-inbox", label: "Attention Inbox", panel: byId("attention-inbox") },
+  { id: "codex-instances", label: "Codex Instances", panel: byId("codex-instances") },
+]);
+const dispose = mountAttentionUI(byId("attention-inbox"), bridge, { navigation: "phone", requestedItem, requestRevision: () => requestRevision });
+const disposeInstances = mountCodexInstancesUI(byId("codex-instances"), bridge, { phone: true });
 async function reconnect() {
   if (refreshing) return;
   refreshing = true;
@@ -26,16 +33,16 @@ async function reconnect() {
 byId("refresh").onclick = () => { void reconnect(); };
 window.addEventListener("online", reconnect);
 window.addEventListener("offline", () => { header.connection(false, "Offline — reconnect to send changes."); online = false; });
-window.addEventListener("hashchange", () => { requestRevision++; void reconnect(); });
+window.addEventListener("hashchange", () => { if (requestedItem()) tabs.select("attention-inbox"); requestRevision++; void reconnect(); });
 navigator.serviceWorker?.addEventListener("message", event => {
   if (event.data?.type !== "attention-open" || typeof event.data.url !== "string") return;
   const target = new URL(event.data.url, location.origin);
   if (target.origin !== location.origin || target.pathname !== "/") return;
-  location.hash = target.hash; requestRevision++; void reconnect();
+  tabs.select("attention-inbox"); location.hash = target.hash; requestRevision++; void reconnect();
 });
 document.addEventListener("visibilitychange", () => { if (!document.hidden) void reconnect(); });
 const retry = setInterval(() => { if (!document.hidden && !online) void reconnect(); }, 10000);
-window.addEventListener("beforeunload", () => { clearInterval(retry); dispose(); header.dispose(); bridge.close(); });
+window.addEventListener("beforeunload", () => { clearInterval(retry); dispose(); disposeInstances(); tabs.dispose(); header.dispose(); bridge.close(); });
 byId("check-delivery").onclick = async () => {
   try { await bridge.checkDeliveries(); byId("delivery-status").textContent = bridge.pendingCount ? "Still unconfirmed. Check the Codex conversation before sending again." : "Delivery confirmed. Refresh the question if needed."; }
   catch (error) { byId("delivery-status").textContent = (error as Error).message; }

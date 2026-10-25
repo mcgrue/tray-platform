@@ -31,10 +31,15 @@ export interface CodexInstancesBridge {
   onCodexInstancesChanged(callback: (snapshot: CodexInstancesSnapshot) => void): () => void;
   getCodexInstanceConversations?(target: CodexInstanceTarget): Promise<CodexInstanceConversation[]>;
   sendCodexInstanceMessage?(target: CodexInstanceTarget, conversationId: string, message: string): Promise<import("./codex-message").CodexMessageReceipt>;
+  onRecoveredCodexInstanceMessage?(callback: (delivery: RecoveredCodexInstanceMessage) => void): () => void;
 }
 
 export interface CodexInstanceTarget { codexPid: number; codexStartedAt: string; }
 export interface CodexInstanceConversation { id: string; title: string; lastActiveAt: number; }
+export interface RecoveredCodexInstanceMessage {
+  target: CodexInstanceTarget; receipt: import("./codex-message").CodexMessageReceipt;
+  conversationId?: string; message?: string;
+}
 
 export interface ProcessDescriptor {
   pid: number;

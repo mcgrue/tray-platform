@@ -143,6 +143,9 @@ tbody tr:hover { background: var(--accent); }
 .codex-activity-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; margin-bottom: 16px; color: var(--muted-foreground); font-size: 13px; }
 .codex-activity-legend > span { display: inline-flex; align-items: center; gap: 6px; }
 .codex-activity-legend .codex-activity-icon { margin-right: 0; flex: 0 0 auto; }
+[data-activity-details] { margin-top: 12px; color: var(--muted-foreground); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+[data-activity-details] p { margin: 0 0 6px; }
+[data-activity-details] button { margin: 4px 0 0; }
 #soundboard button { font-size: 13px; }
 [data-codex-instance-composer] { padding:20px; margin:16px 0; background:var(--card); border:1px solid var(--border); border-radius:var(--radius); }
 [data-codex-instance-composer] label { display:flex; width:100%; }

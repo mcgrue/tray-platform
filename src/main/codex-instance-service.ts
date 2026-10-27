@@ -48,6 +48,13 @@ export class CodexInstanceService {
     if (this.pending) return this.pending;
     // Defer the runner so concurrent callers and listeners share the same scan.
     this.pending = Promise.resolve().then(() => this.options.scan()).then(result => {
+      if (this.options.activity) for (const instance of result.instances) {
+        const previous = this.snapshot.instances.find(item => item.codexPid === instance.codexPid && item.codexStartedAt === instance.codexStartedAt);
+        if (previous) {
+          instance.activity = previous.activity; instance.activityCheckedAt = previous.activityCheckedAt;
+          instance.activityReason = previous.activityReason; instance.activityLastKnownAt = previous.activityLastKnownAt;
+        }
+      }
       if (!this.closed) this.snapshot = {
         supported: true, scanning: false, instances: result.instances,
         scannedAt: (this.options.now || Date.now)(), warning: result.warning,
@@ -80,13 +87,18 @@ export class CodexInstanceService {
     if (this.activityPending) return this.activityPending;
     const instances = this.list().instances;
     this.activityPending = Promise.resolve().then(() => this.options.activity!.enrich(instances)).catch(() => {
-      instances.forEach(instance => { instance.activity = "unknown"; instance.activityCheckedAt = (this.options.now || Date.now)(); });
+      instances.forEach(instance => {
+        instance.activity = "unknown"; instance.activityCheckedAt = (this.options.now || Date.now)(); instance.activityReason = "check-failed";
+      });
     }).then(() => {
       if (this.closed) return;
       // A concurrent inventory scan can replace a process or recycle its PID.
       for (const instance of this.snapshot.instances) {
         const result = instances.find(item => item.codexPid === instance.codexPid && item.codexStartedAt === instance.codexStartedAt);
-        if (result) { instance.activity = result.activity; instance.activityCheckedAt = result.activityCheckedAt; }
+        if (result) {
+          instance.activity = result.activity; instance.activityCheckedAt = result.activityCheckedAt;
+          instance.activityReason = result.activityReason; instance.activityLastKnownAt = result.activityLastKnownAt;
+        }
       }
       this.publish();
     }).finally(() => { this.activityPending = undefined; });

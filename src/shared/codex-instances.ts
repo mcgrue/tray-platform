@@ -1,6 +1,10 @@
 import { CodexAttachmentsBridge } from "./codex-attachments";
 
 export type CodexActivityState = "working" | "waiting" | "idle" | "unknown";
+/** Bounded diagnostics only; never expose IPC payloads or conversation contents. */
+export type CodexActivityReason = "no-conversations" | "history-unavailable" | "incomplete-mapping" | "coverage-limit"
+  | "process-unavailable" | "connection-unavailable" | "owner-unavailable" | "snapshot-timeout"
+  | "unsupported-protocol" | "unsupported-state" | "state-unavailable" | "resuming" | "check-failed";
 
 export interface CodexInstance {
   codexPid: number;
@@ -16,6 +20,8 @@ export interface CodexInstance {
   lastFileUpdatedAt?: number;
   activity?: CodexActivityState;
   activityCheckedAt?: number;
+  activityReason?: CodexActivityReason;
+  activityLastKnownAt?: number;
 }
 
 export interface CodexInstancesSnapshot {

@@ -119,6 +119,20 @@ than 30 seconds show Unknown. This uses local Codex internals (stream version 11
 so older extensions may show Unknown. No messages, approvals, or turns are sent.
 Quit and reopen Tray Platform after building to load the activity reader.
 
+Unknown activity includes an explanation and the last confirmed activity time
+(or "No confirmed activity yet"). Desktop entries show these below the title;
+on phone, expand the instance. Reasons distinguish unavailable history, uncertain
+conversation mappings, unavailable processes/connections/owners, snapshot timeouts,
+unsupported activity protocols/states, and stale checks. **Refresh now** rescans
+instances and schedules another activity check. Last-confirmed times survive failed
+checks and rescans for the same process, but do not transfer to a restarted process
+or persist across a Tray restart. A confirmed activity state does not imply task
+success. Raw protocol errors and conversation content are not included in diagnostics.
+
+After building, `yarn electron dev-infrastructure/smoke-codex-activity-diagnostics.cjs`
+checks explanations, refresh/recovery, stale observations, keyboard focus and
+phone disclosures in isolated desktop and phone-sized browser fixtures.
+
 Choose **Message** beside an instance to compose a message. The picker lists saved
 conversations in that project, including idle conversations with no recent
 execution history. Leave **New conversation** selected to create a conversation

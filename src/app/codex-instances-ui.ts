@@ -1,5 +1,5 @@
 import { CodexInstance, CodexInstancesBridge, CodexInstancesSnapshot } from "../shared/codex-instances";
-import { codexActivityIcon, codexActivityLegend } from "./codex-activity-icon";
+import { codexActivityIcon, codexActivityLegend, mountCodexActivityDetails } from "./codex-activity-icon";
 import { mountCodexInstanceComposer } from "./codex-instance-composer";
 import { mountCodexInstanceMenu } from "./codex-instance-menu";
 
@@ -24,6 +24,8 @@ export function mountCodexInstancesUI(root: HTMLElement, bridge: CodexInstancesB
   const expanded = new Set<string>();
   let disposed = false;
   let revision = 0;
+  let refreshing = false;
+  const activityDetails = new Map<string, (instance: CodexInstance, disabled: boolean) => void>();
   let latest: CodexInstancesSnapshot | undefined;
   let sortColumn: CodexSortColumn = "title";
   let sortDirection: CodexSortDirection = "ascending";
@@ -110,13 +112,16 @@ export function mountCodexInstancesUI(root: HTMLElement, bridge: CodexInstancesB
       : snapshot.scanning ? "Scanning VS Code processes…"
       : `${snapshot.scannedAt ? `Last scanned ${new Date(snapshot.scannedAt).toLocaleTimeString()}. ` : ""}Scans every 5 minutes. Activity checks every 10 seconds.`;
     error.textContent = [snapshot.error ? `Scan failed: ${snapshot.error}${snapshot.scannedAt ? " Showing the last successful scan." : ""}` : "", snapshot.warning].filter(Boolean).join(" ");
-    refresh.disabled = snapshot.scanning || !snapshot.supported;
+    refresh.disabled = refreshing || snapshot.scanning || !snapshot.supported;
     empty.textContent = !snapshot.instances.length && snapshot.supported && !snapshot.scanning && !snapshot.error
       ? "No Codex processes found under VS Code." : "";
     table.hidden = !snapshot.instances.length;
     scroller.hidden = table.hidden;
     const focusedDisclosure = (document.activeElement as HTMLElement | null)?.dataset.instanceDisclosure;
+    const focusedRefresh = (document.activeElement as HTMLElement | null)?.closest("[data-activity-details]")?.closest("tr")?.dataset.codexPid;
     let restoreDisclosureFocus: HTMLButtonElement | undefined;
+    let restoreRefreshFocus: HTMLButtonElement | undefined;
+    activityDetails.clear();
     body.replaceChildren();
     sortCodexInstances(snapshot.instances, sortColumn, sortDirection).forEach(instance => {
       const row = body.insertRow();
@@ -138,8 +143,14 @@ export function mountCodexInstancesUI(root: HTMLElement, bridge: CodexInstancesB
           if (updatedText === "Unavailable") cell.title = "No confirmed file edit found for this Codex process, or its edit history is unavailable.";
         }
       });
+      const activityContainer = document.createElement("div"), activityRoot = document.createElement("div");
+      activityContainer.append(activityRoot);
+      activityContainer.id = `instance-${viewId}-${instance.codexPid}-activity`;
+      const updateActivity = mountCodexActivityDetails(activityRoot, refreshInstances);
+      activityDetails.set(String(instance.codexPid), updateActivity);
+      updateActivity(instance, refresh.disabled);
       if (options.phone) {
-        const details = Array.from(row.cells).slice(1);
+        const details: HTMLElement[] = [...Array.from(row.cells).slice(1), activityContainer];
         const disclosure = document.createElement("button");
         disclosure.type = "button"; disclosure.dataset.instanceDisclosure = identity;
         const title = document.createElement("span"); title.dataset.instanceTitle = "";
@@ -166,12 +177,15 @@ export function mountCodexInstancesUI(root: HTMLElement, bridge: CodexInstancesB
         updateExpanded();
         if (focusedDisclosure === identity) restoreDisclosureFocus = disclosure;
       }
+      row.cells[0].append(activityContainer);
+      if (focusedRefresh === String(instance.codexPid) && !activityRoot.hidden) restoreRefreshFocus = activityRoot.querySelector("button")!;
       if (menu) {
         const cell = row.insertCell(); cell.dataset.instanceActions = "";
         cell.appendChild(menu.trigger(instance));
       }
     });
     restoreDisclosureFocus?.focus({ preventScroll: true });
+    restoreRefreshFocus?.focus({ preventScroll: true });
     menu?.update();
   }
 
@@ -181,17 +195,33 @@ export function mountCodexInstancesUI(root: HTMLElement, bridge: CodexInstancesB
     if (!latest || disposed) return;
     for (const row of Array.from(body.rows)) {
       const instance = latest.instances.find(item => String(item.codexPid) === row.dataset.codexPid);
-      if (instance) row.querySelector("[data-codex-activity]")?.replaceWith(codexActivityIcon(instance));
+      if (instance) {
+        row.querySelector("[data-codex-activity]")?.replaceWith(codexActivityIcon(instance));
+        activityDetails.get(String(instance.codexPid))?.(instance, refresh.disabled);
+      }
     }
   }, 5000);
   const initialRevision = revision;
   void bridge.getCodexInstances().then(snapshot => { if (revision === initialRevision) render(snapshot); })
     .catch(reason => { if (!disposed && revision === initialRevision) error.textContent = String(reason); });
-  refresh.addEventListener("click", () => {
+  function refreshInstances() {
+    if (disposed || refreshing || refresh.matches(":disabled")) return;
+    refreshing = true;
     refresh.disabled = true;
-    void bridge.refreshCodexInstances().catch(reason => {
-      if (!disposed) { error.textContent = String(reason); refresh.disabled = false; }
+    latest?.instances.forEach(instance => activityDetails.get(String(instance.codexPid))?.(instance, true));
+    const refreshRevision = revision;
+    void bridge.refreshCodexInstances().then(snapshot => {
+      if (!disposed && revision === refreshRevision) render(snapshot);
+    }).catch(reason => {
+      if (!disposed) error.textContent = String(reason);
+    }).finally(() => {
+      refreshing = false;
+      if (!disposed) {
+        refresh.disabled = !!latest?.scanning || !latest?.supported;
+        latest?.instances.forEach(instance => activityDetails.get(String(instance.codexPid))?.(instance, refresh.disabled));
+      }
     });
-  });
+  }
+  refresh.addEventListener("click", refreshInstances);
   return () => { disposed = true; clearInterval(activityExpiry); unsubscribe(); menu?.dispose(); composer.dispose(); root.replaceChildren(); };
 }

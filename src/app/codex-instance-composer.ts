@@ -2,6 +2,7 @@ import { CodexInstance, CodexInstanceConversation, CodexInstancesBridge, CodexIn
 import { CodexMessageReceipt, MAX_CODEX_MESSAGE_LENGTH } from "../shared/codex-message";
 import { sameMessageDraft } from "../shared/codex-attachments";
 import { AttachmentDraft, attachmentMessage, mountCodexAttachmentsUI, newAttachmentDraft } from "./codex-attachments-ui";
+import { createCodexMessageInput } from "./codex-message-input";
 
 interface Draft {
   instance: CodexInstance; conversations: CodexInstanceConversation[]; conversationId: string; text: string; attachments: AttachmentDraft;
@@ -13,7 +14,7 @@ const errorText = (error: unknown) => (error instanceof Error ? error.message : 
   .replace(/^Error invoking remote method 'codex-instance-(?:conversations|message)': (?:Error: )?/, "");
 
 /** A stable editor outside the table; sorting and activity snapshots cannot erase drafts. */
-export function mountCodexInstanceComposer(root: HTMLElement, bridge: CodexInstancesBridge) {
+export function mountCodexInstanceComposer(root: HTMLElement, bridge: CodexInstancesBridge, options: { phone?: boolean } = {}) {
   const drafts = new Map<string, Draft>();
   let active: Draft | undefined, disposed = false;
   root.dataset.codexInstanceComposer = ""; root.hidden = true;
@@ -24,8 +25,8 @@ export function mountCodexInstanceComposer(root: HTMLElement, bridge: CodexInsta
   const select = document.createElement("select"); conversationLabel.appendChild(select);
   const refresh = document.createElement("button"); refresh.type = "button"; refresh.textContent = "Refresh conversations";
   const messageLabel = document.createElement("label"); messageLabel.textContent = "Message";
-  const input = document.createElement("textarea"); input.rows = 4; input.maxLength = MAX_CODEX_MESSAGE_LENGTH;
-  input.placeholder = "Tell Codex what to do next…"; messageLabel.appendChild(input);
+  const input = createCodexMessageInput({ phone: options.phone, label: "Message", rows: 4, maxLength: MAX_CODEX_MESSAGE_LENGTH,
+    placeholder: "Tell Codex what to do next…" }); messageLabel.appendChild(input.element);
   const hint = document.createElement("p"); hint.dataset.muted = "";
   hint.textContent = "Ctrl+Enter to send. Choose an existing conversation or start a new one in this project.";
   const send = document.createElement("button"); send.type = "submit"; send.textContent = "Send message";
@@ -135,9 +136,9 @@ export function mountCodexInstanceComposer(root: HTMLElement, bridge: CodexInsta
       : receipt.delivery === "steered" ? "Sent to the active Codex turn." : "Sent to Codex as a follow-up.";
     if (active === draft) { input.value = ""; refreshUI(); }
   }
-  input.addEventListener("input", () => { if (active) { active.text = input.value; refreshUI(); } });
+  input.element.addEventListener("input", () => { if (active) { active.text = input.value; refreshUI(); } });
   select.addEventListener("change", () => { if (active) { active.conversationId = select.value; active.selectionMissing = false; active.status = ""; active.error = ""; refreshUI(); } });
-  input.addEventListener("keydown", event => {
+  input.element.addEventListener("keydown", event => {
     if (event.key === "Enter" && (event.ctrlKey || event.metaKey) && !event.isComposing) { event.preventDefault(); void submit(); }
   });
   form.addEventListener("submit", event => { event.preventDefault(); void submit(); });
@@ -162,6 +163,6 @@ export function mountCodexInstanceComposer(root: HTMLElement, bridge: CodexInsta
       }
       refreshUI();
     },
-    dispose() { disposed = true; unsubscribeRecovered?.(); attachmentUI.dispose(); drafts.clear(); root.replaceChildren(); },
+    dispose() { disposed = true; unsubscribeRecovered?.(); attachmentUI.dispose(); input.dispose(); drafts.clear(); root.replaceChildren(); },
   };
 }

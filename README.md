@@ -45,6 +45,8 @@ and focus. Double-click the tray icon to open or focus it, or use the tray menu.
 Pending items support Go and Done; history supports
 Reopen. Closing the window keeps the tray process running; use its Quit command
 to exit. Data is stored in `attention.json` in Electron's user-data directory.
+The **Attention Inbox** tab shows the pending count in a red badge on desktop and
+phone. It updates live across tabs and hides when no items are pending.
 Only Pending and Done states are supported. On upgrade, previously snoozed items
 return to Pending without replaying sounds or push notifications. Their content
 and timestamps are retained, and the store is migrated atomically to version 2.
@@ -147,7 +149,10 @@ The background runtime uses the documented
 
 The Attention Inbox and Codex Instances composers support files and images on
 desktop and phone. Choose the **paperclip** button, drop files onto the composer,
-or paste an image. Images appear as small thumbnails; other files use file icons. Click an attachment
+or paste an image into the message textbox (Ctrl/Cmd+V, or the phone's Paste action
+when its browser/keyboard exposes clipboard images). The pasted image becomes an
+attachment without replacing the message text. Images appear as small thumbnails;
+other files use file icons. Click an attachment
 for a larger preview with filename and size overlays. The top-right **trash**
 button removes that attachment; the **red X** beside it closes the preview.
 Escape or clicking outside also closes the preview.
@@ -155,6 +160,12 @@ Text/source files show a bounded text preview; other files show a file icon.
 A message can contain attachments without text, including when starting
 a new conversation. PNG, JPEG, GIF, and WebP images are sent as image input;
 other formats are sent as local file references for Codex to read.
+
+The PWA message boxes use an image-capable editing host so mobile browsers can
+advertise image insertion to the keyboard when focused. Keyboard clipboard
+suggestions remain browser/keyboard controlled. Text stays plain, including when
+pasted from a formatted source; images go into the attachment strip. The app does
+not read the clipboard merely because the editor receives focus.
 
 The paperclip and send controls share a row on the right. Exceeding the file-count,
 individual-size, or total-size limit shows a dismissible toast with the limits;
@@ -186,6 +197,10 @@ file selection and clipboard access require a separate manual check.
 `yarn electron dev-infrastructure/smoke-codex-attachment-preview.cjs` checks the
 icon strip, preview overlays, removal, keyboard/backdrop dismissal, reconnect
 state, inert source previews, and narrow layouts without a Codex runtime.
+`yarn electron dev-infrastructure/smoke-codex-message-input.cjs` checks the mobile
+editor's plain-text paste, newlines, undo, image attachment routing, length limit,
+IME composition, offline locks, and draft retention. Keyboard smartbar behavior
+still requires a physical phone check.
 
 ### Phone approvals
 

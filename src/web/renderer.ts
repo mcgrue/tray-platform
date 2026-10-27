@@ -23,7 +23,8 @@ const tabs = mountSectionTabs(byId("section-tabs"), [
   { id: "attention-inbox", label: "Attention Inbox", panel: byId("attention-inbox") },
   { id: "codex-instances", label: "Codex Instances", panel: byId("codex-instances") },
 ]);
-const dispose = mountAttentionUI(byId("attention-inbox"), bridge, { navigation: "phone", requestedItem, requestRevision: () => requestRevision });
+const dispose = mountAttentionUI(byId("attention-inbox"), bridge, { navigation: "phone", requestedItem, requestRevision: () => requestRevision,
+  onPendingCount: count => tabs.setBadge("attention-inbox", count, `${count} pending`) });
 const disposeInstances = mountCodexInstancesUI(byId("codex-instances"), bridge, { phone: true });
 async function reconnect() {
   if (refreshing) return;
@@ -35,8 +36,13 @@ window.addEventListener("online", reconnect);
 window.addEventListener("offline", () => { header.connection(false, "Offline — reconnect to send changes."); online = false; });
 window.addEventListener("hashchange", () => { if (requestedItem()) tabs.select("attention-inbox"); requestRevision++; void reconnect(); });
 navigator.serviceWorker?.addEventListener("message", event => {
+  if (event.data?.type === "attention-client-info") {
+    event.ports[0]?.postMessage({ type: "attention-client-info", standalone: window.matchMedia("(display-mode: standalone)").matches });
+    return;
+  }
   if (event.data?.type !== "attention-open" || typeof event.data.url !== "string") return;
-  const target = new URL(event.data.url, location.origin);
+  let target: URL;
+  try { target = new URL(event.data.url, location.origin); } catch { return; }
   if (target.origin !== location.origin || target.pathname !== "/") return;
   tabs.select("attention-inbox"); location.hash = target.hash; requestRevision++; void reconnect();
 });

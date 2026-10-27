@@ -48,6 +48,7 @@ export interface AttentionUIOptions {
   navigation?: "phone";
   requestedItem?: () => { source: string; id: string } | undefined;
   requestRevision?: () => number;
+  onPendingCount?: (count: number) => void;
 }
 
 export function mountAttentionUI(root: HTMLElement, bridge: AttentionBridge, options: AttentionUIOptions = {}): () => void {
@@ -158,7 +159,8 @@ export function mountAttentionUI(root: HTMLElement, bridge: AttentionBridge, opt
     go.dataset.variant = "primary";
     const done = button("Done", () => void perform(() => bridge.setAttentionState(item.source, item.id, "done")));
     const reopen = button("Reopen", () => void perform(() => bridge.setAttentionState(item.source, item.id, "pending")));
-    actions.append(go, phoneLink, done, reopen);
+    if (!phone) actions.appendChild(go);
+    actions.append(phoneLink, done, reopen);
     const questionRoot = element("section");
     const approvalRoot = element("section");
     body.append(metadata, origin, description, approvalRoot, questionRoot, destination, progress, failure, actions);
@@ -189,10 +191,11 @@ export function mountAttentionUI(root: HTMLElement, bridge: AttentionBridge, opt
       origin.hidden = !item.origin;
       destination.textContent = item.destination
         ? item.destination.kind === "url" ? item.destination.url : item.destination.title || `Window ${item.destination.hwnd}`
-        : item.origin ? "Go focuses the originating VS Code window." : "No destination.";
+        : item.origin ? "" : "No destination.";
+      destination.hidden = !destination.textContent;
       go.disabled = busy || !canNavigateAttention(item);
       if (options.navigation === "phone") {
-        go.hidden = true; origin.hidden = true; destination.hidden = true;
+        origin.hidden = true; destination.hidden = true;
         phoneLink.hidden = item.destination?.kind !== "url";
         if (item.destination?.kind === "url") phoneLink.href = urlDestination(item.destination.url).url;
       }
@@ -209,11 +212,15 @@ export function mountAttentionUI(root: HTMLElement, bridge: AttentionBridge, opt
     if (disposed) return;
     const requested = options.requestedItem?.();
     const targetKey = requested ? attentionKey(requested) : "";
-    const revealToken = `${targetKey}:${options.requestRevision?.() || 0}`;
+    const requestRevision = options.requestRevision?.() || 0;
+    const revealToken = `${targetKey}:${requestRevision}`;
     const target = requested && snapshot.items.find(item => attentionKey(item) === targetKey);
-    const reveal = Boolean(target && revealToken !== revealedKey);
+    // A restored notification URL must not default the inbox to Done. History
+    // can still be opened by selecting Done or an explicit notification request.
+    const reveal = Boolean(target && (target.state === "pending" || requestRevision > 0) && revealToken !== revealedKey);
     if (reveal && target) { active = target.state; revealedKey = revealToken; }
     const pending = snapshot.items.filter(item => item.state === "pending").length;
+    options.onPendingCount?.(pending);
     heading.textContent = `Attention inbox (${pending} pending)`;
     status.textContent = "";
     error.textContent = snapshot.error || "";

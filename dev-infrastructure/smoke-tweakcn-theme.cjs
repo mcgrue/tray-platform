@@ -106,7 +106,7 @@ async function run() {
     inboxTop: document.querySelector("main").getBoundingClientRect().top,
     tabsBottom: document.getElementById("section-tabs").getBoundingClientRect().bottom,
     tabs: [...document.querySelectorAll('#section-tabs [role="tab"]')].map(button => ({
-      label: button.textContent, selected: button.getAttribute("aria-selected"), tabIndex: button.tabIndex,
+      label: button.querySelector("[data-tab-label]").textContent, selected: button.getAttribute("aria-selected"), tabIndex: button.tabIndex,
       linked: document.getElementById(button.getAttribute("aria-controls")).getAttribute("aria-labelledby") === button.id
     })),
     visiblePanels: [...document.querySelectorAll('[role="tabpanel"]')].filter(panel => !panel.hidden).map(panel => panel.id),
@@ -122,6 +122,10 @@ async function run() {
   assert.equal(baseline.hasLauncher, false, "Take me there launcher is removed");
   assert(baseline.inboxTop >= baseline.tabsBottom && baseline.inboxTop - baseline.tabsBottom <= 28, "Inbox starts below the tab bar without a navigation gap");
   assert.deepEqual(baseline.tabs.map(button => button.label), ["Attention Inbox", "Codex Instances", "Context Bookmarks", "Sound Board"]);
+  assert(await evaluate(() => {
+    const tab = document.querySelector("#tab-attention-inbox"), badge = tab.querySelector("[data-tab-badge]");
+    return !badge.hidden && badge.textContent === "2" && getComputedStyle(badge).backgroundColor === "rgb(220, 38, 38)" && tab.getAttribute("aria-label") === "Attention Inbox, 2 pending";
+  }), "Desktop inbox tab shows a red pending count with an accessible label");
   assert.deepEqual(baseline.tabs.map(button => button.selected), ["true", "false", "false", "false"]);
   assert.deepEqual(baseline.tabs.map(button => button.tabIndex), [0, -1, -1, -1]);
   assert(baseline.tabs.every(button => button.linked), "Tabs and panels have accessible labels and controls");
@@ -175,7 +179,7 @@ async function run() {
   await evaluate(() => document.querySelector("[data-navigation-chooser]").dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
   assert.equal(await evaluate(() => getComputedStyle(document.querySelector("[data-navigation-chooser]")).display), "none");
   assert.equal(await evaluate(() => getComputedStyle(document.querySelector("#navigation")).display), "none", "Closing the chooser removes the entire section again");
-  await evaluate(() => document.querySelector("main nav button:nth-child(3)").click());
+  await evaluate(() => [...document.querySelectorAll("main nav button")].find(button => button.textContent.startsWith("Done")).click());
   assert.equal(await evaluate(() => [...document.querySelectorAll("main article")].filter(node => getComputedStyle(node).display !== "none").length), 0, "Done tab hides pending cards");
   await evaluate(() => document.querySelector("main nav button").click());
 

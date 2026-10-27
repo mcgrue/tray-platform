@@ -99,13 +99,14 @@ async function run() {
     const question = document.querySelector('article:not([hidden]) [data-codex-question]:not([hidden])');
     const card = question.closest("article");
     const diagnostics = card.querySelector("[data-attention-diagnostics]");
-    const destination = [...card.querySelectorAll("p")].find(node => node.textContent === "Go focuses the originating VS Code window.");
+    const go = [...card.querySelectorAll("[data-card-actions] button")].find(node => node.textContent === "Go");
     return { expanded: question.open, cleanTitle: !card.querySelector("h3").textContent.startsWith("Codex needs input:"),
       metadataAtBottom: diagnostics === card.lastElementChild, collapsed: !diagnostics.open,
       fullMetadata: ["Project:", "Session:", "Turn:", "Call:", "Tool:"].every(label => diagnostics.textContent.includes(label)),
       hiddenMetadata: !card.innerText.includes("Session:"), noEditor: !card.innerText.includes("Choose destination"),
       noHint: !card.innerText.includes("Answer every open question."),
-      questionsAboveGo: question.getBoundingClientRect().bottom <= destination.getBoundingClientRect().top };
+      noGoReminder: !card.textContent.includes("Go focuses the originating VS Code window."),
+      questionsAboveGo: question.getBoundingClientRect().bottom <= go.getBoundingClientRect().top };
   });
   assert.deepEqual(layout, Object.fromEntries(Object.keys(layout).map(key => [key, true])), "Question card layout");
   await sleep(150);

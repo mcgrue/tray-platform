@@ -14,6 +14,10 @@ file-picker/clipboard acceptance remains pending.
   Preserve drafts across snapshots, tab changes, and failed sends.
 - Keep paperclip/send controls together on the right. Show file-count and size
   limits in dismissible toasts when exceeded, without changing the draft.
+- PWA message editors use `contenteditable=true` so supporting mobile browsers
+  advertise image insertion to the keyboard. Serialize plain text and route
+  images into attachments; preserve native undo, composition, and offline locks.
+  Smartbar suggestions remain controlled by the browser and keyboard.
 - Store bounded uploads as private local copies under Tray user data. Phone
   uploads require existing Tailscale identity, origin, and CSRF protections.
   Bind opaque attachment IDs to the uploader; never accept arbitrary local paths.
@@ -57,6 +61,15 @@ file-picker/clipboard acceptance remains pending.
   against its supported installed extension 26.1007.21434. With 26.1021.22027,
   that existing question fixture stops before UI testing because its extractor
   depends on old minified function names (`n8t`, `Axn`); it was not expanded here.
+- Mobile editing-host update: all 513 Jest tests, build, and focused strict
+  TypeScript passed. Editor smoke: `%TEMP%/tray-message-input-DrwKH8/result.json`;
+  runtime attachments: `%TEMP%/tray-attachments-smoke-74ExCQ/result.json`;
+  PWA inbox and instance checks: `%TEMP%/tray-web-smoke-BfVSZk` and
+  `%TEMP%/tray-web-instances-sjDPuW`. Phone layouts were visually reviewed.
+  Actual Android keyboard suggestions require physical-device acceptance.
+  Firefox's capability mapping is in
+  [GeckoEditable.java](https://github.com/mozilla-firefox/firefox/blob/main/mobile/android/geckoview/src/main/java/org/mozilla/geckoview/GeckoEditable.java),
+  where contenteditable fields advertise image MIME types to the IME.
 - Restart Tray Platform and reload the phone page to load this build. The running
   Tray process was left alone because quitting stops its owned Codex sessions.
 

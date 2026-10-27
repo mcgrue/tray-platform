@@ -121,11 +121,11 @@ async function run() {
     document.querySelector("[data-instance-menu] [data-message-codex]").click();
   }, pid);
   const read = () => evaluate(() => { const panel = document.querySelector("[data-codex-instance-composer]"); return {
-    text: panel.querySelector("textarea").value, selected: panel.querySelector("select").value, choices: panel.querySelector("select").options.length,
+    text: panel.querySelector("[data-message-input]").innerText, selected: panel.querySelector("select").value, choices: panel.querySelector("select").options.length,
     disabled: panel.querySelector('[type="submit"]').matches(":disabled"), status: panel.querySelector('[role="status"]').textContent,
     error: panel.querySelector('[role="alert"]').textContent,
   }; });
-  const type = text => evaluate(text => { const input = document.querySelector("[data-codex-instance-composer] textarea"); input.value = text; input.dispatchEvent(new Event("input", { bubbles: true })); }, text);
+  const type = text => evaluate(text => { const input = document.querySelector("[data-codex-instance-composer] [data-message-input]"); input.textContent = text; input.dispatchEvent(new Event("input", { bubbles: true })); }, text);
   const choose = value => evaluate(value => { const select = document.querySelector("[data-codex-instance-composer] select"); select.value = value; select.dispatchEvent(new Event("change")); }, value);
   const send = () => evaluate(() => document.querySelector('[data-codex-instance-composer] [type="submit"]').click());
   await open(42); await wait("saved choices", async () => (await read()).choices === 2);
@@ -167,7 +167,7 @@ async function run() {
   await wait("offline controls", async () => (await read()).disabled);
   await evaluate(() => document.querySelector("[data-instance-menu-toggle]").click());
   assert(await evaluate(() => document.querySelector("[data-instance-menu]").hidden), "Offline menus stay disabled");
-  await evaluate(() => document.querySelector("[data-codex-instance-composer] textarea").dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true, bubbles: true })));
+  await evaluate(() => document.querySelector("[data-codex-instance-composer] [data-message-input]").dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true, bubbles: true })));
   await sleep(100); assert.equal(sent.length, 4, "Keyboard shortcuts cannot send through a disabled fieldset");
   await tab("attention-inbox"); await tab("codex-instances"); assert.equal((await read()).text, "Next retained draft");
   offline = false;

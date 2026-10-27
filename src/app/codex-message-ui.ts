@@ -2,6 +2,7 @@ import { AttentionBridge, AttentionItem } from "../shared/attention";
 import { attentionCodexSession, MAX_CODEX_MESSAGE_LENGTH } from "../shared/codex-message";
 import { CodexMessageDraft, sameMessageDraft } from "../shared/codex-attachments";
 import { attachmentMessage, mountCodexAttachmentsUI, newAttachmentDraft } from "./codex-attachments-ui";
+import { createCodexMessageInput } from "./codex-message-input";
 
 /** Kept mounted across inbox snapshots so incoming notifications cannot erase a draft. */
 export function mountCodexMessageUI(root: HTMLElement, bridge: AttentionBridge, initial: AttentionItem, options: { phone?: boolean } = {}) {
@@ -21,13 +22,12 @@ export function mountCodexMessageUI(root: HTMLElement, bridge: AttentionBridge, 
   const label = document.createElement("label");
   label.textContent = completion ? "New instruction" : "Message to this Codex conversation";
   label.style.display = "block";
-  const input = document.createElement("textarea");
-  input.rows = 3;
-  input.maxLength = MAX_CODEX_MESSAGE_LENGTH;
-  input.placeholder = completion ? "Tell Codex what to do next…" : "Type a message…";
-  label.appendChild(input);
-  const hint = document.createElement("p");
-  hint.textContent = options.phone ? "" : completion ? "Ctrl+Enter to send to this conversation." : "Ctrl+Enter to send. Use Done when this item is resolved.";
+  const input = createCodexMessageInput({ phone: options.phone, label: label.textContent, rows: 3, maxLength: MAX_CODEX_MESSAGE_LENGTH,
+    placeholder: completion ? "Tell Codex what to do next…" : "Type a message…" });
+  label.appendChild(input.element);
+  if (completion) input.element.setAttribute("enterkeyhint", "send");
+  const hint = !completion && !options.phone ? document.createElement("p") : undefined;
+  if (hint) hint.textContent = "Ctrl+Enter to send. Use Done when this item is resolved.";
   const send = document.createElement("button");
   send.type = "submit";
   if (completion) {
@@ -40,7 +40,9 @@ export function mountCodexMessageUI(root: HTMLElement, bridge: AttentionBridge, 
   error.setAttribute("role", "alert");
   const attachmentRoot = document.createElement("section");
   const actions = document.createElement("div"); actions.dataset.composerActions = ""; actions.append(send);
-  form.append(label, attachmentRoot, hint, actions, status, error);
+  form.append(label, attachmentRoot);
+  if (hint) form.appendChild(hint);
+  form.append(actions, status, error);
   editor.appendChild(form);
   root.appendChild(editor);
   const attachmentUI = mountCodexAttachmentsUI(attachmentRoot, form, bridge, () => attachments, refresh);
@@ -57,7 +59,7 @@ export function mountCodexMessageUI(root: HTMLElement, bridge: AttentionBridge, 
       send.title = sendLabel; send.setAttribute("aria-label", sendLabel);
       send.setAttribute("aria-busy", String(sending));
     } else send.textContent = sendLabel;
-    if (!session) error.textContent = "This item has no Codex session. Use Go to open its conversation.";
+    if (!session) error.textContent = options.phone ? "This item has no Codex session. Open its conversation on your desktop." : "This item has no Codex session. Use Go to open its conversation.";
   }
   async function submit() {
     if (disposed || sending || send.matches(":disabled") || !bridge.sendAttentionMessage) return;
@@ -84,9 +86,25 @@ export function mountCodexMessageUI(root: HTMLElement, bridge: AttentionBridge, 
       if (!disposed) { refresh(); input.focus(); }
     }
   }
-  input.addEventListener("input", refresh);
-  input.addEventListener("keydown", event => {
-    if (event.key === "Enter" && (event.ctrlKey || event.metaKey) && !event.isComposing) {
+  input.element.addEventListener("input", refresh);
+  let composing = false;
+  input.element.addEventListener("compositionstart", () => { composing = true; });
+  input.element.addEventListener("compositionend", () => { composing = false; });
+  input.element.addEventListener("keydown", event => {
+    if (event.key !== "Enter" || composing || event.isComposing || event.keyCode === 229) return;
+    if (completion) {
+      event.preventDefault();
+      if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) input.insertNewline();
+      else if (!event.repeat) void submit();
+    } else if (event.ctrlKey || event.metaKey) {
+      event.preventDefault(); void submit();
+    }
+  });
+  // Android keyboards can emit an editing action without an Enter keydown.
+  input.element.addEventListener("beforeinput", event => {
+    const edit = event as InputEvent;
+    if (completion && !composing && !edit.isComposing && event.cancelable &&
+      (edit.inputType === "insertParagraph" || edit.inputType === "insertLineBreak")) {
       event.preventDefault(); void submit();
     }
   });
@@ -98,5 +116,5 @@ export function mountCodexMessageUI(root: HTMLElement, bridge: AttentionBridge, 
     error.textContent = ""; status.textContent = "Delivery confirmed."; refresh();
   });
   refresh();
-  return { update(next: AttentionItem) { item = next; refresh(); }, dispose() { disposed = true; recovered?.(); attachmentUI.dispose(); } };
+  return { update(next: AttentionItem) { item = next; refresh(); }, dispose() { disposed = true; recovered?.(); attachmentUI.dispose(); input.dispose(); } };
 }

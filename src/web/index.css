@@ -15,7 +15,7 @@ body { padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inse
 #header-menu button { width: 100%; text-align: left; background: transparent; border: 0; box-shadow: none; }
 #header-menu button:hover { background: var(--accent); }
 button, input, select, textarea, summary { min-height: 44px; }
-label > input, label > select, label > textarea { font-size: 16px; }
+label > input, label > select, label > textarea, label > [data-mobile-message-input] { font-size: 16px; }
 #online-controls, #notification-controls { padding: 0; margin: 0; border: 0; min-width: 0; }
 #online-controls:disabled main { opacity: .65; }
 #notifications-dialog { width: min(440px, calc(100% - 32px)); padding: 20px; border: 1px solid var(--border); border-radius: calc(var(--radius) + 4px); color: var(--foreground); background: var(--card); box-shadow: var(--shadow-lg); }

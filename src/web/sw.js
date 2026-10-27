@@ -26,14 +26,50 @@ self.addEventListener("push", event => {
     });
   })());
 });
+// WindowClient does not expose display-mode. Ask each pane without waking it by
+// navigation; a suspended/older pane must not hold up the notification click.
+function isStandaloneClient(client) {
+  return new Promise(resolve => {
+    const channel = new MessageChannel();
+    const finish = standalone => {
+      clearTimeout(timeout);
+      channel.port1.close(); channel.port2.close();
+      resolve(standalone);
+    };
+    const timeout = setTimeout(() => finish(false), 500);
+    channel.port1.onmessage = event => finish(event.data?.type === "attention-client-info" && event.data.standalone === true);
+    try { client.postMessage({ type: "attention-client-info" }, [channel.port2]); }
+    catch { finish(false); }
+  });
+}
+
 self.addEventListener("notificationclick", event => {
   event.notification.close();
   event.waitUntil((async () => {
-    const target = new URL(event.notification.data?.url || "/", self.location.origin);
-    if (target.origin !== self.location.origin) return;
+    let target;
+    try { target = new URL(event.notification.data?.url || "/", self.location.origin); }
+    catch { return; }
+    if (target.origin !== self.location.origin || target.pathname !== "/") return;
     const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-    const client = clients.find(value => new URL(value.url).origin === self.location.origin);
-    if (client) { client.postMessage({ type: "attention-open", url: target.href }); await client.focus(); }
-    else await self.clients.openWindow(target.href);
+    let candidates = clients.filter(client => {
+      const url = new URL(client.url);
+      return url.origin === target.origin && url.pathname === "/" && client.frameType !== "nested";
+    });
+    if (candidates.length > 1) {
+      const ranked = await Promise.all(candidates.map(async client => ({ client, standalone: await isStandaloneClient(client) })));
+      candidates = ranked.sort((a, b) => Number(b.standalone) - Number(a.standalone)).map(value => value.client);
+    }
+    for (const client of candidates) {
+      try {
+        await client.focus();
+        client.postMessage({ type: "attention-open", url: target.href });
+        return;
+      } catch { /* A pane can close between matchAll and focus. Try another. */ }
+    }
+    // The browser decides whether a cold start opens standalone or in a tab.
+    const opened = await self.clients.openWindow(target.href);
+    if (opened) {
+      try { await opened.focus(); } catch { /* The target is already open. */ }
+    }
   })());
 });

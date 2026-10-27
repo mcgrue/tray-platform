@@ -23,7 +23,7 @@ const evaluate = (window, fn, ...args) => window.webContents.executeJavaScript(`
 const state = (window, selector) => evaluate(window, selector => {
   const node = document.querySelector(selector); if (!node) return null;
   return { count: node.querySelectorAll("[data-attachment-id]").length, imageIcons: node.querySelectorAll('[data-attachment-kind="image"]').length,
-    text: node.querySelector("textarea").value, selected: node.querySelector("select")?.value,
+    text: node.querySelector("[data-message-input]").value ?? node.querySelector("[data-message-input]").innerText, selected: node.querySelector("select")?.value,
     disabled: node.querySelector('button[type="submit"]').matches(":disabled"), status: node.querySelector(':scope > form > [role="status"]')?.textContent,
     error: node.querySelector(':scope > form > [role="alert"]')?.textContent, toast: document.querySelector('[data-toast]:not([hidden])')?.textContent };
 }, selector);
@@ -32,10 +32,10 @@ const attach = (window, selector, input = files, kind = "picker") => evaluate(wi
   for (const file of input) transfer.items.add(new File([Uint8Array.from(atob(file.base64), c => c.charCodeAt(0))], file.name, { type: file.type }));
   if (kind === "picker") { const picker = form.querySelector('input[type="file"]'); picker.files = transfer.files; picker.dispatchEvent(new Event("change", { bubbles: true })); }
   else if (kind === "drop") form.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: transfer }));
-  else form.querySelector("textarea").dispatchEvent(new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData: transfer }));
+  else form.querySelector("[data-message-input]").dispatchEvent(new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData: transfer }));
 }, selector, input, kind);
 const send = (window, selector) => evaluate(window, selector => document.querySelector(selector + ' button[type="submit"]').click(), selector);
-const type = (window, selector, text) => evaluate(window, (selector, text) => { const input = document.querySelector(selector + " textarea"); input.value = text; input.dispatchEvent(new Event("input", { bubbles: true })); }, selector, text);
+const type = (window, selector, text) => evaluate(window, (selector, text) => { const input = document.querySelector(selector + " [data-message-input]"); if (input instanceof HTMLTextAreaElement) input.value = text; else input.textContent = text; input.dispatchEvent(new Event("input", { bubbles: true })); }, selector, text);
 async function openInstance(window, pid = 42) {
   await evaluate(window, pid => {
     document.querySelector('[role="tab"][aria-controls="codex-instances"]').click();
@@ -70,10 +70,14 @@ async function checkActions(window, selector) {
   }, selector), "Paperclip and send share a right-aligned row; paperclip opens picker without reminder text");
 }
 async function checkPreviews(window, selector, name) {
+  await wait("image attachment thumbnail", () => evaluate(window, selector =>
+    document.querySelector(selector + " [data-attachment-thumbnail] img")?.naturalWidth > 0, selector));
   assert(await evaluate(window, selector => {
     const root = document.querySelector(selector + " [data-codex-attachments]");
-    return !root.querySelector("img") && root.querySelectorAll("[data-attachment-open]").length === 2;
-  }, selector), "Attachments render as icons without inline images");
+    const thumbnail = root.querySelector("[data-attachment-thumbnail] img"), bounds = thumbnail.getBoundingClientRect();
+    return bounds.width >= 30 && bounds.width <= 44 && bounds.height === bounds.width &&
+      !!root.querySelector('[data-attachment-kind="file"] svg') && root.querySelectorAll("[data-attachment-open]").length === 2;
+  }, selector), "Attachments render as small image thumbnails and file icons");
   await evaluate(window, selector => document.querySelector(selector + ' [data-attachment-kind="image"]').click(), selector);
   await wait("large image preview", () => evaluate(window, () => document.querySelector("[data-attachment-preview][open] img")?.naturalWidth > 0));
   assert(await evaluate(window, () => {
@@ -160,19 +164,21 @@ async function run() {
   await wait("desktop inbox delivered", async () => (await state(desktop, inboxComposer)).count === 0);
   await wait("desktop follow-up complete", () => runtime.completed.size === 2);
 
-  await openInstance(phone); await attach(phone, instanceComposer); await checkActions(phone, instanceComposer);
+  await openInstance(phone); await attach(phone, instanceComposer, [files[0]]); await attach(phone, instanceComposer, [files[1]], "paste"); await checkActions(phone, instanceComposer);
   await checkPreviews(phone, instanceComposer, "phone-instance"); await send(phone, instanceComposer);
   await wait("phone new conversation", async () => Boolean((await state(phone, instanceComposer)).selected) && (await state(phone, instanceComposer)).count === 0);
   await wait("phone new turn complete", () => runtime.completed.size === 3);
-  await openInbox(phone); await attach(phone, inboxComposer, [files[0]], "drop"); await attach(phone, inboxComposer, [files[1]], "paste");
+  await openInbox(phone); await attach(phone, inboxComposer, [files[0]], "drop");
   await type(phone, inboxComposer, "Phone follow-up with attachments");
+  await attach(phone, inboxComposer, [files[1]], "paste");
+  assert.equal((await state(phone, inboxComposer)).text, "Phone follow-up with attachments", "Pasting an image preserves the message text");
   await attention.upsert("fixture", "update", { title: "Snapshot while files are attached" }); await sleep(100);
   await openInstance(phone); await openInbox(phone); assert.equal((await state(phone, inboxComposer)).count, 2);
   await checkActions(phone, inboxComposer);
   await checkPreviews(phone, inboxComposer, "phone-inbox");
   assert(await evaluate(phone, () => document.documentElement.scrollWidth <= innerWidth));
   await screenshot(phone, "phone-attachments", inboxComposer);
-  await evaluate(phone, selector => { dispatchEvent(new Event("offline")); document.querySelector(selector + " textarea").dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true, bubbles: true })); }, inboxComposer);
+  await evaluate(phone, selector => { dispatchEvent(new Event("offline")); document.querySelector(selector + " [data-message-input]").dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true, bubbles: true })); }, inboxComposer);
   assert.equal(delivered.length, 3, "Offline keyboard send cannot bypass disabled controls");
   await evaluate(phone, () => dispatchEvent(new Event("online"))); await wait("phone reauthorized", () => evaluate(phone, () => !document.querySelector("#online-controls").disabled));
   dropNext = true; await send(phone, inboxComposer);
@@ -230,7 +236,7 @@ async function run() {
   }
   const records = Object.values(codexAttachments.records); assert.equal(records.length, 9); assert.equal(new Set(records.map(record => record.filename)).size, 9);
   assert.equal(errors.filter(message => !/Failed to load resource/.test(message)).length, 0, errors.join("\n"));
-  fs.writeFileSync(path.join(directory, "result.json"), JSON.stringify({ passed: true, delivered, checks: ["desktop and phone instance/inbox composers", "attachment-only new threads", "drop and paste", "icon-only attachment strip", "image/source previews with metadata overlays", "draft isolation and snapshots", "actual image input", "exact source copies", "offline controls", "lost receipt recovery without replay", "invalid image retains draft", "file size limit", "preview corner removal", "active turn image steering", "right-aligned actions and picker button", "file count and combined size limits preserve drafts", "limit toasts replace and dismiss"], directory }, null, 2));
+  fs.writeFileSync(path.join(directory, "result.json"), JSON.stringify({ passed: true, delivered, checks: ["desktop and phone instance/inbox composers", "attachment-only new threads", "drop and paste", "clipboard image paste in both PWA composers preserves text", "thumbnail and file icon attachment strip", "image/source previews with metadata overlays", "draft isolation and snapshots", "actual image input", "exact source copies", "offline controls", "lost receipt recovery without replay", "invalid image retains draft", "file size limit", "preview corner removal", "active turn image steering", "right-aligned actions and picker button", "file count and combined size limits preserve drafts", "limit toasts replace and dismiss"], directory }, null, 2));
   console.log("PASS desktop and phone attachments with actual Codex runtime:", directory);
 }
 const watchdog = setTimeout(() => { console.error("Attachment smoke timed out"); finish(1); }, 120000);

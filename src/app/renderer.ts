@@ -100,7 +100,8 @@ try {
 		resumeText: bookmarks.resumeText, onResumeChanged: bookmarks.onChanged,
 	});
 	window.addEventListener("beforeunload", disposeNavigation, { once: true });
-	const disposeInbox = mountAttentionUI(inboxRoot, window["ipcComms"] as AttentionBridge, { mountDetails: bookmarks.mountAttentionDetails });
+	const disposeInbox = mountAttentionUI(inboxRoot, window["ipcComms"] as AttentionBridge, { mountDetails: bookmarks.mountAttentionDetails,
+		onPendingCount: count => tabs.setBadge("attention-inbox", count, `${count} pending`) });
 	window.addEventListener("beforeunload", disposeInbox, { once: true });
 	const disposeCodex = mountCodexInstancesUI(codexRoot, window.ipcComms);
 	window.addEventListener("beforeunload", disposeCodex, { once: true });

@@ -82,7 +82,7 @@ export function mountCodexInstancesUI(root: HTMLElement, bridge: CodexInstancesB
   sortLabel.appendChild(sort);
   const messaging = !!bridge.getCodexInstanceConversations && !!bridge.sendCodexInstanceMessage;
   const composerRoot = document.createElement("section");
-  const composer = mountCodexInstanceComposer(composerRoot, bridge);
+  const composer = mountCodexInstanceComposer(composerRoot, bridge, options);
   scroller.appendChild(table);
   const empty = document.createElement("p");
 

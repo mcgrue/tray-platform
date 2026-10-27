@@ -9,12 +9,15 @@ export function mountSectionTabs(root: HTMLElement, sections: SectionTab[]) {
   root.setAttribute("role", "tablist");
   root.setAttribute("aria-label", "Tray Platform sections");
   const scrollPositions = new Map<string, number>();
+  const badges: HTMLElement[] = [];
   let active: SectionTab | undefined;
   const buttons = sections.map(section => {
     const button = document.createElement("button");
     button.type = "button";
     button.id = `tab-${section.id}`;
-    button.textContent = section.label;
+    const label = document.createElement("span"); label.dataset.tabLabel = ""; label.textContent = section.label;
+    const badge = document.createElement("span"); badge.dataset.tabBadge = ""; badge.hidden = true; badge.setAttribute("aria-hidden", "true");
+    badges.push(badge); button.append(label, badge);
     button.setAttribute("role", "tab");
     button.setAttribute("aria-controls", section.id);
     section.panel.id = section.id;
@@ -72,6 +75,14 @@ export function mountSectionTabs(root: HTMLElement, sections: SectionTab[]) {
   if (sections.length) select(sections[0].id);
   return {
     select,
+    setBadge(id: string, count: number, description: string) {
+      const index = sections.findIndex(section => section.id === id);
+      if (index < 0) return;
+      const badge = badges[index];
+      badge.textContent = count > 0 ? String(count) : ""; badge.hidden = count <= 0;
+      badge.title = description;
+      buttons[index].setAttribute("aria-label", count > 0 ? `${sections[index].label}, ${description}` : sections[index].label);
+    },
     dispose() {
       root.removeEventListener("click", click);
       root.removeEventListener("keydown", keydown);

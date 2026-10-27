@@ -51,13 +51,13 @@ async function run() {
   await wait("connected inbox", () => evaluate(() => document.querySelector("#connection").textContent === "Connected to your desktop" && document.querySelectorAll("article").length === 2));
   assert.equal(await evaluate(() => typeof window.ipcComms), "undefined");
   assert.equal(await evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-  assert.equal(await evaluate(() => [...document.querySelectorAll("article button")].filter(button => button.textContent === "Go" && !button.hidden).length), 0);
+  assert.equal(await evaluate(() => [...document.querySelectorAll("article button")].filter(button => button.textContent === "Go").length), 0);
   await wait("questions", () => evaluate(() => document.querySelectorAll('[data-codex-question] fieldset').length === 2));
   const cardState = id => evaluate(id => {
     const card = [...document.querySelectorAll("article")].find(node => node.dataset.attentionKey === JSON.stringify(["codex", id]));
     const body = card.querySelector("[data-attention-body]"), toggle = card.querySelector("[data-attention-disclosure]");
     return { expanded: toggle.getAttribute("aria-expanded") === "true", hidden: body.hidden,
-      visible: body.getBoundingClientRect().height > 0, text: card.querySelector('[data-codex-message] textarea')?.value,
+      visible: body.getBoundingClientRect().height > 0, text: card.querySelector('[data-codex-message] [data-message-input]')?.textContent,
       questionDraft: card.querySelector('textarea[data-question-index="1"]')?.value };
   }, id);
   const toggleCard = id => evaluate(id => {
@@ -86,7 +86,7 @@ async function run() {
   assert.equal(await evaluate(() => [...document.querySelectorAll("[data-card-actions] select, [data-card-actions] button")]
     .some(node => node.tagName === "SELECT" || /snooze/i.test(node.textContent))), false);
   assert.equal(await evaluate(() => document.body.textContent.includes("Send to this Codex conversation.")), false);
-  const type = text => evaluate(text => { const card = [...document.querySelectorAll("article")].find(card => card.querySelector("h3").textContent.includes("PWA fixture")); const input = card.querySelector("textarea"); input.value = text; input.dispatchEvent(new Event("input", { bubbles: true })); }, text);
+  const type = text => evaluate(text => { const card = [...document.querySelectorAll("article")].find(card => card.querySelector("h3").textContent.includes("PWA fixture")); const input = card.querySelector("[data-message-input]"); input.textContent = text; input.dispatchEvent(new Event("input", { bubbles: true })); }, text);
   await type("A retained mobile draft");
   await toggleCard(completion);
   await evaluate(id => [...document.querySelectorAll("article")].find(node => node.dataset.attentionKey === JSON.stringify(["codex", id])).querySelector("[data-attention-disclosure]").focus(), completion);
@@ -111,14 +111,14 @@ async function run() {
     .querySelector("[data-attention-body]").hidden), "Incoming items start collapsed");
   assert((await cardState(completion)).visible && (await cardState("question-fixture")).visible, "Live updates preserve expansion");
   assert.equal((await cardState("question-fixture")).questionDraft, "Retain my second answer");
-  assert.equal(await evaluate(() => [...document.querySelectorAll("textarea")].some(input => input.value === "A retained mobile draft")), true);
+  assert.equal(await evaluate(() => [...document.querySelectorAll("[data-message-input]")].some(input => input.textContent === "A retained mobile draft")), true);
   const send = () => evaluate(() => [...document.querySelectorAll("article")].find(card => card.querySelector("h3").textContent.includes("PWA fixture")).querySelector('[data-codex-message] button[type="submit"]').click());
   await send(); await wait("delivery acknowledged", () => evaluate(() => [...document.querySelectorAll('[data-codex-message] [role="status"]')].some(node => node.textContent.includes("follow-up"))));
   assert.deepEqual(sent, [{ id: completion, text: "A retained mobile draft" }]);
   dropNextMessageResponse = true; await type("Delivered but response lost"); await send();
   await wait("dropped response feedback", () => evaluate(() => [...document.querySelectorAll('[data-codex-message] [role="alert"]')].some(node => node.textContent.includes("Delivery is unconfirmed"))));
   await evaluate(() => document.querySelector("#check-delivery").click());
-  await wait("durable success recovered", () => evaluate(() => document.querySelector("#delivery").hidden && ![...document.querySelectorAll("textarea")].some(input => input.value === "Delivered but response lost")));
+  await wait("durable success recovered", () => evaluate(() => document.querySelector("#delivery").hidden && ![...document.querySelectorAll("[data-message-input]")].some(input => input.textContent === "Delivered but response lost")));
   assert.equal(sent.length, 2, "Lost acknowledgement reconciles without replay");
   failDelivery = true; await type("Unconfirmed fixture instruction"); await send();
   await wait("unconfirmed feedback", () => evaluate(() => [...document.querySelectorAll('[data-codex-message] [role="alert"]')].some(node => node.textContent.includes("Fixture disconnected"))));

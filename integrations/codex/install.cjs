@@ -64,6 +64,7 @@ function install({ codexHome = process.env.CODEX_HOME || path.join(os.homedir(),
     }
   }
   fs.mkdirSync(directory, { recursive: true });
+  const imagesBackup = replaceWithBackup(path.join(directory, "attention-images.cjs"), fs.readFileSync(path.join(__dirname, "attention-images.cjs")));
   const completionBackup = replaceWithBackup(path.join(directory, "attention-completion-dismissal.cjs"), fs.readFileSync(path.join(__dirname, "attention-completion-dismissal.cjs")));
   const answersBackup = replaceWithBackup(path.join(directory, "attention-answers.cjs"), fs.readFileSync(path.join(__dirname, "attention-answers.cjs")));
   const bridgeBackup = replaceWithBackup(bridgePath, fs.readFileSync(path.join(__dirname, "attention-hook.cjs")));
@@ -74,7 +75,7 @@ function install({ codexHome = process.env.CODEX_HOME || path.join(os.homedir(),
     hooksBackup = replaceWithBackup(hooksPath, Buffer.from(JSON.stringify(config, null, 2) + "\n"));
   }
   return { hooksPath, bridgePath, command, commandWindows, added: addedEvents.length > 0, addedEvents,
-    backups: [bridgeBackup, answersBackup, completionBackup, hooksBackup].filter(Boolean) };
+    backups: [bridgeBackup, answersBackup, completionBackup, imagesBackup, hooksBackup].filter(Boolean) };
 }
 
 if (require.main === module) {

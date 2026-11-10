@@ -50,6 +50,12 @@ export function localFileHref(link: LocalFileLink): string {
   return `file://${link.path.startsWith("/") ? "" : "/"}${encodedPath(link)}${link.line ? `#L${link.line}${link.column ? `C${link.column}` : ""}` : ""}`;
 }
 
+/** Inline previews are limited to ordinary local raster image paths. */
+export function localImageLink(value: string): LocalFileLink | undefined {
+  const link = localFileLink(value);
+  return link && !link.line && /\.(?:png|jpe?g|gif|webp)$/i.test(link.path) ? link : undefined;
+}
+
 export function editorFileHref(link: LocalFileLink): string {
   // https://code.visualstudio.com/docs/configure/command-line#_opening-vs-code-with-urls
   return `vscode://file${link.path.startsWith("/") ? "" : "/"}${encodedPath(link)}${link.line ? `:${link.line}${link.column ? `:${link.column}` : ""}` : ""}`;
@@ -59,4 +65,9 @@ export function attentionFileHref(item: { source: string; id: string }, href: st
   const link = localFileLink(href);
   if (!link) throw new Error("Invalid local file link");
   return `/api/attention/${encodeURIComponent(item.source)}/${encodeURIComponent(item.id)}/file?target=${encodeURIComponent(localFileHref(link))}${link.line ? `#L${link.line}` : ""}`;
+}
+
+export function attentionImageHref(item: { source: string; id: string }, href: string): string {
+  if (!localImageLink(href)) throw new Error("Invalid local image link");
+  return attentionFileHref(item, href) + "&inline=1";
 }

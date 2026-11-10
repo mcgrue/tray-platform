@@ -146,7 +146,7 @@ export function createAttentionWeb(options: {
         if (!item) throw new AttentionError("Attention item no longer exists", 404);
         const query = new URL(req.url!, config.origin).searchParams;
         const file = await attentionFileResponse(item, query.get("target") || "", query.get("download") === "1",
-          () => operations.questions(source, id));
+          () => operations.questions(source, id), query.get("inline") === "1");
         res.writeHead(200, { ...file.headers, "Content-Length": file.body.length }); res.end(file.body); return;
       }
       if (action === "questions" && req.method === "GET") { sendJson(res, 200, await operations.questions(source, id)); return; }

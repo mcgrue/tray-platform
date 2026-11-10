@@ -6,6 +6,7 @@ const os = require("os");
 const { createHash } = require("crypto");
 const { requestId, rememberRequest, isAnswered, resolveAnswered, handleAnswers } = require("./attention-answers.cjs");
 const { rememberCompletion, isAcknowledged, resolveCompletion, acknowledgeCompletions } = require("./attention-completion-dismissal.cjs");
+const { retainCompletionImages } = require("./attention-images.cjs");
 
 const ENDPOINT = "http://127.0.0.1:22222";
 const TIMEOUT_MS = 1500;
@@ -213,7 +214,8 @@ async function run(input = process.stdin, options = {}) {
   if (options.captureOrigin) item.body.originProcess = { pid: process.pid, observedAt: Date.now() };
   if (event.hook_event_name === "Stop") {
     const record = rememberCompletion(event, item, options, observedAt);
-    const outgoing = isAcknowledged(record) ? { ...item, body: { ...item.body, sound: undefined } } : item;
+    const retained = retainCompletionImages(item, options.completionImageDirectory);
+    const outgoing = isAcknowledged(record) ? { ...retained, body: { ...retained.body, sound: undefined } } : retained;
     await deliver(outgoing, options);
     await resolveCompletion(record, options, dismiss);
     return { source: item.source, id: item.id };

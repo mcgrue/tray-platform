@@ -26,7 +26,8 @@ export class CodexMessageService {
   constructor(private readonly createClient: () => Client = () => {
     if (process.platform !== "win32") throw new Error("Sending to Codex currently requires Windows.");
     return new CodexIpcClient();
-  }, private readonly projectMessages?: { owns(id: string): boolean; sendExisting(id: string, message: CodexMessage): Promise<CodexMessageReceipt> }) {}
+  }, private readonly projectMessages?: { owns(id: string): boolean; sendExisting(id: string, message: CodexMessage): Promise<CodexMessageReceipt> },
+  private readonly resumeCompletion?: (item: AttentionItem, message: CodexMessage) => Promise<CodexMessageReceipt>) {}
 
   async send(item: AttentionItem, message: unknown, expectedOwner?: string): Promise<CodexMessageReceipt> {
     if (this.closed) throw new Error("Codex messaging is closed.");
@@ -47,6 +48,12 @@ export class CodexMessageService {
       this.clients.add(client);
       await client.connect();
       const discovery = await client.request("thread-owner-discovery", { hostId: "local", conversationId: sessionId }, 1);
+      // A completed project thread may no longer have an IPC owner after Tray restarts.
+      // Only a definitive discovery miss is safe to resume; delivery errors are ambiguous.
+      if (discovery.resultType === "error" && discovery.error === "no-client-found" &&
+        /^completion-[a-f0-9]{64}$/.test(item.id) && this.resumeCompletion) {
+        return await this.resumeCompletion(item, message);
+      }
       result(discovery, "thread-owner-discovery");
       const owner = discovery.handledByClientId;
       if (!owner) throw new Error("Codex did not identify the conversation owner.");

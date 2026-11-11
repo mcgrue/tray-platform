@@ -4,7 +4,7 @@ import { mountCodexMessageUI } from "./codex-message-ui";
 import { mountCodexQuestionUI } from "./codex-question-ui";
 import { attentionContent } from "./attention-content";
 import { renderAttentionMarkdown } from "./attention-markdown";
-import { attentionFileHref } from "../shared/attention-link";
+import { attentionFileHref, attentionImageHref } from "../shared/attention-link";
 import { mountCodexApprovalUI } from "./codex-approval-ui";
 
 let nextAttentionBodyId = 0;
@@ -165,7 +165,12 @@ export function mountAttentionUI(root: HTMLElement, bridge: AttentionBridge, opt
     const approvalRoot = element("section");
     body.append(metadata, origin, description, approvalRoot, questionRoot, destination, progress, failure, actions);
     const approval = mountCodexApprovalUI(approvalRoot, bridge, item);
-    const markdownOptions = options.navigation === "phone" ? { localLink: (href: string) => attentionFileHref(item, href) } : {};
+    const markdownOptions = {
+      ...(options.navigation === "phone" ? { localLink: (href: string) => attentionFileHref(item, href) } : {}),
+      ...(item.source === "codex" && item.id.startsWith("completion-") ? {
+        localImage: (href: string) => options.navigation === "phone" ? attentionImageHref(item, href) : href,
+      } : {}),
+    };
     const question = mountCodexQuestionUI(questionRoot, bridge, item, () => { questionLoaded = true; refresh(); }, markdownOptions);
     const messageRoot = element("section");
     body.appendChild(messageRoot);

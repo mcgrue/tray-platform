@@ -12,7 +12,7 @@ export type CodexMessage = string | { text: string; attachments: StoredCodexAtta
 const idPattern = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 const digest = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
 const publicAttachment = ({ id, name, size, mimeType, image }: CodexAttachment): CodexAttachment => ({ id, name, size, mimeType, image });
-function imageType(bytes: Buffer): string | undefined {
+export function imageType(bytes: Buffer): string | undefined {
   if (bytes.length >= 33 && bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) && bytes.toString("ascii", 12, 16) === "IHDR") return "image/png";
   if (bytes.length >= 4 && bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255) return "image/jpeg";
   if (bytes.length >= 13 && /^GIF8[79]a$/.test(bytes.toString("ascii", 0, 6))) return "image/gif";

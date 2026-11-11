@@ -1,8 +1,8 @@
 import MarkdownIt from "markdown-it";
 import { isWebLink } from "./web-link";
-import { localFileHref, localFileLink } from "./attention-link";
+import { localFileHref, localFileLink, localImageLink } from "./attention-link";
 
-export interface AttentionMarkdownOptions { localLink?: (href: string) => string; }
+export interface AttentionMarkdownOptions { localLink?: (href: string) => string; localImage?: (href: string) => string; }
 
 // Shared by the renderers and file-route authorization. Raw HTML stays inert.
 const markdown = new MarkdownIt({ html: false, breaks: true, linkify: true });
@@ -18,8 +18,13 @@ markdown.renderer.rules.link_open = (tokens, index, options, env: AttentionMarkd
   token.attrSet("rel", "noopener noreferrer");
   return renderer.renderToken(tokens, index, options);
 };
-markdown.renderer.rules.image = (tokens, index, options, env, renderer) =>
-  markdown.utils.escapeHtml(renderer.renderInlineAsText(tokens[index].children || [], options, env));
+markdown.renderer.rules.image = (tokens, index, options, env: AttentionMarkdownOptions, renderer) => {
+  const token = tokens[index], alt = renderer.renderInlineAsText(token.children || [], options, env);
+  const link = env?.localImage && localImageLink(token.attrGet("src") || "");
+  if (!link) return markdown.utils.escapeHtml(alt);
+  const src = env.localImage(localFileHref(link));
+  return `<img class="attention-image" src="${markdown.utils.escapeHtml(src)}" alt="${markdown.utils.escapeHtml(alt)}">`;
+};
 markdown.renderer.rules.table_open = () => '<div class="attention-markdown-table" tabindex="0" role="region" aria-label="Table"><table>\n';
 markdown.renderer.rules.table_close = () => "</table></div>\n";
 
@@ -37,6 +42,21 @@ export function attentionLocalFileLinks(text: string): string[] {
         if (link) links.add(localFileHref(link));
       }
       if (token.children && token.type !== "image") visit(token.children);
+    }
+  };
+  visit(markdown.parse(text, {}));
+  return [...links];
+}
+
+/** Only Markdown image tokens can authorize an inline image response. */
+export function attentionLocalImageLinks(text: string): string[] {
+  const links = new Set<string>();
+  const visit = (tokens: ReturnType<typeof markdown.parse>) => {
+    for (const token of tokens) {
+      if (token.type === "image") {
+        const link = localImageLink(token.attrGet("src") || "");
+        if (link) links.add(localFileHref(link));
+      } else if (token.children) visit(token.children);
     }
   };
   visit(markdown.parse(text, {}));

@@ -93,6 +93,7 @@ article > h3 + p { color: var(--muted-foreground); font-size: 12px; }
 .attention-markdown > :first-child { margin-top: 0; }
 .attention-markdown > :last-child { margin-bottom: 0; }
 .attention-markdown p { white-space: normal; margin: 8px 0; }
+.attention-image { display: block; max-width: 100%; height: auto; margin: 8px 0; border-radius: var(--radius); }
 .attention-markdown :is(h1, h2, h3, h4, h5, h6) { font-size: 1em; line-height: 1.4; margin: 16px 0 8px; font-weight: 600; }
 .attention-markdown h1 { font-size: 1.3em; }
 .attention-markdown h2 { font-size: 1.15em; }

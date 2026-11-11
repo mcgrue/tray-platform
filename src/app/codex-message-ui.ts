@@ -4,10 +4,13 @@ import { CodexMessageDraft, sameMessageDraft } from "../shared/codex-attachments
 import { attachmentMessage, mountCodexAttachmentsUI, newAttachmentDraft } from "./codex-attachments-ui";
 import { createCodexMessageInput } from "./codex-message-input";
 
+const MONITOR_PR_CI_MESSAGE = "Monitor the PR's CI run on a 4 minute poll - if red, fix it; if green merge it";
+
 /** Kept mounted across inbox snapshots so incoming notifications cannot erase a draft. */
 export function mountCodexMessageUI(root: HTMLElement, bridge: AttentionBridge, initial: AttentionItem, options: { phone?: boolean } = {}) {
   let item = initial, sending = false, disposed = false;
   let attemptedMessage: CodexMessageDraft | undefined;
+  let attemptedFromDraft = false;
   const attachments = newAttachmentDraft();
   const completion = item.source === "codex" && /^completion-[a-f0-9]{64}$/.test(item.id);
   const disclosure = completion ? undefined : document.createElement("details");
@@ -34,12 +37,21 @@ export function mountCodexMessageUI(root: HTMLElement, bridge: AttentionBridge, 
     send.dataset.sendInstruction = "";
     send.innerHTML = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m9 6 6 6-6 6"/></svg>';
   }
+  const monitorPrCi = completion ? document.createElement("button") : undefined;
+  if (monitorPrCi) {
+    monitorPrCi.type = "button";
+    monitorPrCi.dataset.monitorPrCi = "";
+    monitorPrCi.textContent = "Monitor CI; fix/merge";
+    monitorPrCi.title = MONITOR_PR_CI_MESSAGE;
+    monitorPrCi.addEventListener("click", () => { void submit(MONITOR_PR_CI_MESSAGE); });
+  }
   const status = document.createElement("p");
   status.setAttribute("role", "status");
   const error = document.createElement("p");
   error.setAttribute("role", "alert");
   const attachmentRoot = document.createElement("section");
   const actions = document.createElement("div"); actions.dataset.composerActions = ""; actions.append(send);
+  if (monitorPrCi) actions.insertBefore(monitorPrCi, send);
   form.append(label, attachmentRoot);
   if (hint) form.appendChild(hint);
   form.append(actions, status, error);
@@ -53,6 +65,7 @@ export function mountCodexMessageUI(root: HTMLElement, bridge: AttentionBridge, 
     const session = attentionCodexSession(item);
     input.disabled = sending || !session;
     send.disabled = sending || !session || (!input.value.trim() && !attachments.files.length);
+    if (monitorPrCi) monitorPrCi.disabled = sending || !session;
     attachmentUI.refresh(sending || !session);
     const sendLabel = sending ? "Sending…" : completion ? "Send instruction" : "Send message";
     if (completion) {
@@ -61,19 +74,21 @@ export function mountCodexMessageUI(root: HTMLElement, bridge: AttentionBridge, 
     } else send.textContent = sendLabel;
     if (!session) error.textContent = options.phone ? "This item has no Codex session. Open its conversation on your desktop." : "This item has no Codex session. Use Go to open its conversation.";
   }
-  async function submit() {
-    if (disposed || sending || send.matches(":disabled") || !bridge.sendAttentionMessage) return;
-    const message = attachmentMessage(input.value, attachments);
+  async function submit(preset?: string) {
+    if (disposed || sending || !attentionCodexSession(item) || !bridge.sendAttentionMessage ||
+      (preset === undefined ? send.matches(":disabled") : monitorPrCi?.matches(":disabled"))) return;
+    const message = preset === undefined ? attachmentMessage(input.value, attachments) : preset;
     attemptedMessage = message;
+    attemptedFromDraft = preset === undefined;
     sending = true;
     error.textContent = "";
     status.textContent = "Sending to Codex…";
     refresh();
     try {
-      await attachmentUI.upload(attachments);
+      if (preset === undefined) await attachmentUI.upload(attachments);
       const receipt = await bridge.sendAttentionMessage(item.source, item.id, message);
       if (disposed) return;
-      input.value = ""; attachments.files = [];
+      if (preset === undefined) { input.value = ""; attachments.files = []; }
       status.textContent = receipt.delivery === "steered" ? "Sent to the active Codex turn." : "Sent to Codex as a follow-up.";
     } catch (reason) {
       if (!disposed) {
@@ -83,7 +98,7 @@ export function mountCodexMessageUI(root: HTMLElement, bridge: AttentionBridge, 
       }
     } finally {
       sending = false;
-      if (!disposed) { refresh(); input.focus(); }
+      if (!disposed) { refresh(); (preset === undefined ? input : monitorPrCi)?.focus(); }
     }
   }
   input.element.addEventListener("input", refresh);
@@ -112,7 +127,7 @@ export function mountCodexMessageUI(root: HTMLElement, bridge: AttentionBridge, 
   disclosure?.addEventListener("toggle", () => { if (disclosure.open && !sending) input.focus(); });
   const recovered = bridge.onRecoveredDelivery?.(delivery => {
     if (delivery.source !== item.source || delivery.id !== item.id || delivery.action !== "messages") return;
-    if (sameMessageDraft(attemptedMessage, attachmentMessage(input.value, attachments))) { input.value = ""; attachments.files = []; }
+    if (attemptedFromDraft && sameMessageDraft(attemptedMessage, attachmentMessage(input.value, attachments))) { input.value = ""; attachments.files = []; }
     error.textContent = ""; status.textContent = "Delivery confirmed."; refresh();
   });
   refresh();

@@ -50,7 +50,7 @@ export class CodexMessageService {
       const discovery = await client.request("thread-owner-discovery", { hostId: "local", conversationId: sessionId }, 1);
       // A completed project thread may no longer have an IPC owner after Tray restarts.
       // Only a definitive discovery miss is safe to resume; delivery errors are ambiguous.
-      if (discovery.resultType === "error" && discovery.error === "no-client-found" &&
+      if (discovery.resultType === "error" && ["no-client-found", "client-disconnected"].includes(discovery.error || "") &&
         /^completion-[a-f0-9]{64}$/.test(item.id) && this.resumeCompletion) {
         return await this.resumeCompletion(item, message);
       }

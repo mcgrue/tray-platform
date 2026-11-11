@@ -14,9 +14,9 @@ const instance = (codexPid: number, workspace = "D:\\dev\\project"): CodexInstan
   vscodeStartedAt: "2026-11-10T09:00:00Z", vscodeMainPid: 12, workspace, title: "Project",
 });
 
-test("resumes a completed thread only after an explicit owner-discovery miss", async () => {
+test.each(["no-client-found", "client-disconnected"])("resumes a completed thread only after an explicit owner-discovery miss: %s", async error => {
   const client = { connect: jest.fn(async () => {}), close: jest.fn(),
-    request: jest.fn(async (method: string) => ({ method, resultType: "error", error: "no-client-found" })) };
+    request: jest.fn(async (method: string) => ({ method, resultType: "error", error })) };
   const resume = jest.fn(async () => ({ sessionId: "saved-thread", turnId: "new-turn", delivery: "started" as const }));
   const service = new CodexMessageService(() => client as any, undefined, resume);
   await expect(service.send(completion, "Monitor CI")).resolves.toMatchObject({ turnId: "new-turn" });

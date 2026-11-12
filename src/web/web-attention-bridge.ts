@@ -4,8 +4,9 @@ import { CodexAnswerReceipt, CodexQuestion, CodexQuestionAnswer } from "../share
 import { CodexInstanceConversation, CodexInstancesBridge, CodexInstancesSnapshot, CodexInstanceTarget, RecoveredCodexInstanceMessage } from "../shared/codex-instances";
 import { CodexApproval, CodexApprovalDecision, CodexApprovalReceipt } from "../shared/codex-approval";
 import { CodexAttachment, CodexAttachmentUpload, CodexMessageDraft } from "../shared/codex-attachments";
+import { CodexTurnOptions, CodexTurnSettings } from "../shared/codex-turn-controls";
 
-interface Receipt { state: "unknown" | "succeeded"; result?: any; error?: string; }
+interface Receipt { state: "unknown" | "succeeded" | "rejected"; result?: any; error?: string; }
 export class WebAttentionBridge implements AttentionBridge, CodexInstancesBridge {
   private token = "";
   private events?: EventSource;
@@ -91,12 +92,19 @@ export class WebAttentionBridge implements AttentionBridge, CodexInstancesBridge
     let receipt: Receipt;
     try { receipt = await this.request<Receipt>(route, { requestId, value }); }
     catch { throw new Error("Delivery is unconfirmed. Use Check delivery above before sending again."); }
+    if (receipt.state === "rejected") {
+      if (this.pending.get(route) === requestId) { this.pending.delete(route); this.pendingValues.delete(route); this.savePending(); }
+      throw new Error(receipt.error || "Codex did not start this turn.");
+    }
     if (receipt.state !== "succeeded") throw new Error(`${receipt.error || "Delivery was not confirmed"}. Check Codex before allowing another send.`);
     if (this.pending.get(route) === requestId) { this.pending.delete(route); this.pendingValues.delete(route); this.savePending(); }
     return receipt.result;
   }
   uploadCodexAttachment(upload: CodexAttachmentUpload) { return this.request<CodexAttachment>("/api/attachments", upload, 90000); }
-  sendAttentionMessage(source: string, id: string, message: CodexMessageDraft) { return this.deliver<CodexMessageReceipt>(source, id, "messages", message); }
+  getAttentionTurnSettings(source: string, id: string) { return this.request<CodexTurnSettings>(this.route(source, id, "turn-settings")); }
+  sendAttentionMessage(source: string, id: string, message: CodexMessageDraft, options?: CodexTurnOptions) {
+    return this.deliver<CodexMessageReceipt>(source, id, "messages", options ? { message, options } : message);
+  }
   answerAttentionQuestion(source: string, id: string, answers: CodexQuestionAnswer[]) { return this.deliver<CodexAnswerReceipt>(source, id, "answers", answers); }
   getAttentionApproval(source: string, id: string) { return this.request<CodexApproval>(this.route(source, id, "approvals")); }
   answerAttentionApproval(source: string, id: string, decision: CodexApprovalDecision) { return this.deliver<CodexApprovalReceipt>(source, id, "approvals", decision); }
@@ -114,8 +122,11 @@ export class WebAttentionBridge implements AttentionBridge, CodexInstancesBridge
   getCodexInstanceConversations(target: CodexInstanceTarget) {
     return this.request<CodexInstanceConversation[]>(this.instanceRoute(target, "conversations"));
   }
-  sendCodexInstanceMessage(target: CodexInstanceTarget, conversationId: string, message: CodexMessageDraft) {
-    return this.deliverRoute<CodexMessageReceipt>(this.instanceRoute(target, "messages"), { conversationId, message });
+  getCodexInstanceTurnSettings(target: CodexInstanceTarget, conversationId: string) {
+    return this.request<CodexTurnSettings>(this.instanceRoute(target, "turn-settings") + `?conversationId=${encodeURIComponent(conversationId)}`);
+  }
+  sendCodexInstanceMessage(target: CodexInstanceTarget, conversationId: string, message: CodexMessageDraft, options?: CodexTurnOptions) {
+    return this.deliverRoute<CodexMessageReceipt>(this.instanceRoute(target, "messages"), { conversationId, message, ...(options ? { options } : {}) });
   }
   onRecoveredCodexInstanceMessage(callback: (delivery: RecoveredCodexInstanceMessage) => void) {
     this.recoveredInstances.add(callback); return () => { this.recoveredInstances.delete(callback); };
@@ -126,14 +137,15 @@ export class WebAttentionBridge implements AttentionBridge, CodexInstancesBridge
     this.checking = (async () => {
       for (const [route, id] of this.pending) {
         const receipt = await this.request<Receipt>(`/api/requests/${id}`);
-        if (receipt.state === "succeeded") {
+        if (receipt.state === "succeeded" || receipt.state === "rejected") {
           this.pending.delete(route);
           const match = /^\/api\/attention\/([^/]+)\/([^/]+)\/(messages|answers|approvals)$/.exec(route);
-          if (match) this.recovered.forEach(callback => callback({ source: decodeURIComponent(match[1]), id: decodeURIComponent(match[2]), action: match[3] as "messages" | "answers" | "approvals" }));
+          if (receipt.state === "succeeded" && match) this.recovered.forEach(callback => callback({ source: decodeURIComponent(match[1]), id: decodeURIComponent(match[2]), action: match[3] as "messages" | "answers" | "approvals" }));
           const instance = /^\/api\/codex-instances\/([1-9]\d*)\/([^/]+)\/messages$/.exec(route);
-          if (instance) this.recoveredInstances.forEach(callback => callback({ target: {
+          if (receipt.state === "succeeded" && instance) this.recoveredInstances.forEach(callback => callback({ target: {
             codexPid: Number(instance[1]), codexStartedAt: decodeURIComponent(instance[2]),
-          }, receipt: receipt.result, conversationId: this.pendingValues.get(route)?.conversationId, message: this.pendingValues.get(route)?.message }));
+          }, receipt: receipt.result, conversationId: this.pendingValues.get(route)?.conversationId,
+            message: this.pendingValues.get(route)?.message, options: this.pendingValues.get(route)?.options }));
           this.pendingValues.delete(route);
         }
       }

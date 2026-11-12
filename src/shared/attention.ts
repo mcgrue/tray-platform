@@ -68,11 +68,13 @@ export interface AttentionNavigationProgress extends NavigationProgress {
 }
 
 export interface AttentionBridge extends CodexAttachmentsBridge {
+  getAttentionTurnSettings?(source: string, id: string): Promise<import("./codex-turn-controls").CodexTurnSettings>;
   onRecoveredDelivery?(callback: (delivery: { source: string; id: string; action: "messages" | "answers" | "approvals" }) => void): () => void;
   getAttention(): Promise<AttentionSnapshot>;
   setAttentionState(source: string, id: string, state: AttentionState): Promise<void>;
   goToAttention(source: string, id: string): Promise<void>;
-  sendAttentionMessage?(source: string, id: string, message: import("./codex-attachments").CodexMessageDraft): Promise<import("./codex-message").CodexMessageReceipt>;
+  sendAttentionMessage?(source: string, id: string, message: import("./codex-attachments").CodexMessageDraft,
+    options?: import("./codex-turn-controls").CodexTurnOptions): Promise<import("./codex-message").CodexMessageReceipt>;
   getAttentionQuestion?(source: string, id: string): Promise<import("./codex-question").CodexQuestion[]>;
   answerAttentionQuestion?(source: string, id: string, answers: import("./codex-question").CodexQuestionAnswer[]): Promise<import("./codex-question").CodexAnswerReceipt>;
   getAttentionApproval?(source: string, id: string): Promise<import("./codex-approval").CodexApproval>;

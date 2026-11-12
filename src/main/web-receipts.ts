@@ -1,8 +1,9 @@
 import { createHash } from "crypto";
 import { AttentionError } from "./attention-service";
+import { CodexTurnNotStartedError } from "../shared/codex-turn-controls";
 import { readWebStore, writeWebStore } from "./web-store";
 
-export interface WebReceipt { state: "unknown" | "succeeded"; result?: unknown; error?: string; }
+export interface WebReceipt { state: "unknown" | "succeeded" | "rejected"; result?: unknown; error?: string; }
 interface RecordEntry extends WebReceipt { owner: string; fingerprint: string; created: number; }
 const day = 86400000;
 
@@ -15,7 +16,7 @@ export class WebReceipts {
     const data = await readWebStore(this.file, { version: 1, records: {} as Record<string, RecordEntry> });
     if (data.version !== 1 || !data.records || typeof data.records !== "object" || Array.isArray(data.records)) throw new Error("Invalid web receipt store");
     for (const [id, record] of Object.entries(data.records)) {
-      if (!/^\d{13}-[a-f0-9-]{36}$/.test(id) || !record || !["unknown", "succeeded"].includes(record.state) ||
+      if (!/^\d{13}-[a-f0-9-]{36}$/.test(id) || !record || !["unknown", "succeeded", "rejected"].includes(record.state) ||
         typeof record.owner !== "string" || typeof record.fingerprint !== "string" || !Number.isFinite(record.created)) throw new Error("Invalid web receipt");
     }
     this.records = Object.assign(Object.create(null), data.records);
@@ -53,7 +54,8 @@ export class WebReceipts {
     const pending = (async () => {
       let receipt: WebReceipt;
       try { receipt = { state: "succeeded", result: await work() }; }
-      catch (error) { receipt = { state: "unknown", error: error instanceof Error ? error.message : "Delivery was not confirmed" }; }
+      catch (error) { receipt = { state: error instanceof CodexTurnNotStartedError ? "rejected" : "unknown",
+        error: error instanceof Error ? error.message : "Delivery was not confirmed" }; }
       await this.serial(async () => {
         const records = { ...this.records, [id]: { ...this.records[id], ...receipt } };
         await writeWebStore(this.file, { version: 1, records }); this.records = records;

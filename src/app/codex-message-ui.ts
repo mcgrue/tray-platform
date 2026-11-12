@@ -3,6 +3,8 @@ import { attentionCodexSession, MAX_CODEX_MESSAGE_LENGTH } from "../shared/codex
 import { CodexMessageDraft, sameMessageDraft } from "../shared/codex-attachments";
 import { attachmentMessage, mountCodexAttachmentsUI, newAttachmentDraft } from "./codex-attachments-ui";
 import { createCodexMessageInput } from "./codex-message-input";
+import { CodexTurnOptions } from "../shared/codex-turn-controls";
+import { mountCodexTurnControls } from "./codex-turn-controls-ui";
 
 const MONITOR_PR_CI_MESSAGE = "Monitor the PR's CI run on a 4 minute poll - if red, fix it; if green merge it";
 
@@ -11,6 +13,7 @@ export function mountCodexMessageUI(root: HTMLElement, bridge: AttentionBridge, 
   let item = initial, sending = false, disposed = false;
   let attemptedMessage: CodexMessageDraft | undefined;
   let attemptedFromDraft = false;
+  let attemptedOptions: CodexTurnOptions | undefined;
   const attachments = newAttachmentDraft();
   const completion = item.source === "codex" && /^completion-[a-f0-9]{64}$/.test(item.id);
   const disclosure = completion ? undefined : document.createElement("details");
@@ -50,9 +53,11 @@ export function mountCodexMessageUI(root: HTMLElement, bridge: AttentionBridge, 
   const error = document.createElement("p");
   error.setAttribute("role", "alert");
   const attachmentRoot = document.createElement("section");
+  const controlsRoot = document.createElement("section");
+  const controls = mountCodexTurnControls(controlsRoot, refresh);
   const actions = document.createElement("div"); actions.dataset.composerActions = ""; actions.append(send);
   if (monitorPrCi) actions.insertBefore(monitorPrCi, send);
-  form.append(label, attachmentRoot);
+  form.append(label, attachmentRoot, controlsRoot);
   if (hint) form.appendChild(hint);
   form.append(actions, status, error);
   editor.appendChild(form);
@@ -65,8 +70,10 @@ export function mountCodexMessageUI(root: HTMLElement, bridge: AttentionBridge, 
     const session = attentionCodexSession(item);
     input.disabled = sending || !session;
     send.disabled = sending || !session || (!input.value.trim() && !attachments.files.length);
-    if (monitorPrCi) monitorPrCi.disabled = sending || !session;
+    if (controls.getDraft() && !controls.canSend()) send.disabled = true;
+    if (monitorPrCi) monitorPrCi.disabled = sending || !session || (!!controls.getDraft() && !controls.canSend());
     attachmentUI.refresh(sending || !session);
+    controls.setBusy(sending || !session);
     const sendLabel = sending ? "Sending…" : completion ? "Send instruction" : "Send message";
     if (completion) {
       send.title = sendLabel; send.setAttribute("aria-label", sendLabel);
@@ -78,17 +85,22 @@ export function mountCodexMessageUI(root: HTMLElement, bridge: AttentionBridge, 
     if (disposed || sending || !attentionCodexSession(item) || !bridge.sendAttentionMessage ||
       (preset === undefined ? send.matches(":disabled") : monitorPrCi?.matches(":disabled"))) return;
     const message = preset === undefined ? attachmentMessage(input.value, attachments) : preset;
+    const turnOptions = controls.getDraft();
     attemptedMessage = message;
     attemptedFromDraft = preset === undefined;
+    attemptedOptions = turnOptions;
     sending = true;
     error.textContent = "";
     status.textContent = "Sending to Codex…";
     refresh();
     try {
       if (preset === undefined) await attachmentUI.upload(attachments);
-      const receipt = await bridge.sendAttentionMessage(item.source, item.id, message);
+      const receipt = turnOptions ? await bridge.sendAttentionMessage(item.source, item.id, message, turnOptions)
+        : await bridge.sendAttentionMessage(item.source, item.id, message);
       if (disposed) return;
       if (preset === undefined) { input.value = ""; attachments.files = []; }
+      controls.setDraft(undefined);
+      void loadSettings();
       status.textContent = receipt.delivery === "steered" ? "Sent to the active Codex turn." : "Sent to Codex as a follow-up.";
     } catch (reason) {
       if (!disposed) {
@@ -100,6 +112,16 @@ export function mountCodexMessageUI(root: HTMLElement, bridge: AttentionBridge, 
       sending = false;
       if (!disposed) { refresh(); (preset === undefined ? input : monitorPrCi)?.focus(); }
     }
+  }
+  async function loadSettings() {
+    if (item.source !== "codex" || !attentionCodexSession(item)) return;
+    if (!bridge.getAttentionTurnSettings) {
+      controls.setSettings({ models: [], current: {}, available: false, reason: "Turn settings are unavailable." }); return;
+    }
+    try { controls.setSettings(await bridge.getAttentionTurnSettings(item.source, item.id)); }
+    catch (reason) { controls.setSettings({ models: [], current: {}, available: false,
+      reason: reason instanceof Error ? reason.message : String(reason) }); }
+    refresh();
   }
   input.element.addEventListener("input", refresh);
   let composing = false;
@@ -127,9 +149,14 @@ export function mountCodexMessageUI(root: HTMLElement, bridge: AttentionBridge, 
   disclosure?.addEventListener("toggle", () => { if (disclosure.open && !sending) input.focus(); });
   const recovered = bridge.onRecoveredDelivery?.(delivery => {
     if (delivery.source !== item.source || delivery.id !== item.id || delivery.action !== "messages") return;
-    if (attemptedFromDraft && sameMessageDraft(attemptedMessage, attachmentMessage(input.value, attachments))) { input.value = ""; attachments.files = []; }
+    if (attemptedFromDraft && sameMessageDraft(attemptedMessage, attachmentMessage(input.value, attachments)) &&
+      JSON.stringify(attemptedOptions || {}) === JSON.stringify(controls.getDraft() || {})) {
+      input.value = ""; attachments.files = []; controls.setDraft(undefined);
+    }
+    void loadSettings();
     error.textContent = ""; status.textContent = "Delivery confirmed."; refresh();
   });
   refresh();
-  return { update(next: AttentionItem) { item = next; refresh(); }, dispose() { disposed = true; recovered?.(); attachmentUI.dispose(); input.dispose(); } };
+  void loadSettings();
+  return { update(next: AttentionItem) { item = next; refresh(); }, dispose() { disposed = true; recovered?.(); attachmentUI.dispose(); controls.dispose(); input.dispose(); } };
 }

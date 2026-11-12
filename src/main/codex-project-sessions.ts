@@ -5,10 +5,13 @@ import { CodexMessageReceipt, isCodexSessionId } from "../shared/codex-message";
 import { CodexAppServer, CodexRpc, CodexServerRequestContext } from "./codex-app-server";
 import { findCodexProcesses } from "./codex-discovery";
 import { CodexMessage, codexMessageParts, validateCodexMessage } from "./codex-attachments";
+import { CodexTurnCurrent, CodexTurnModel, CodexTurnNotStartedError, CodexTurnOptions, CodexTurnSettings, hasTurnOptions,
+  resolveTurnOptions, validateTurnOptions } from "../shared/codex-turn-controls";
 
 const identity = (instance: CodexInstance) => JSON.stringify([instance.codexPid, instance.codexStartedAt]);
 const normalized = (value: string) => value.replace(/^\\\\\?\\/, "").replace(/\\/g, "/").replace(/\/$/, "").toLowerCase();
-interface Runtime { client: CodexRpc; cwd: string; instance: CodexInstance; sessions: Set<string>; turns: Map<string, string>; output: Map<string, Map<string, string>>; }
+interface Runtime { client: CodexRpc; cwd: string; instance: CodexInstance; sessions: Set<string>; turns: Map<string, string>;
+  output: Map<string, Map<string, string>>; settings: Map<string, CodexTurnCurrent>; created: Set<string>; }
 
 /** Saved project history and sessions owned by Tray, independent of recent execution logs. */
 export class CodexProjectSessions {
@@ -28,6 +31,20 @@ export class CodexProjectSessions {
   }) {}
 
   owns(sessionId: string) { return this.sessions.has(sessionId); }
+
+  async turnSettings(instance: CodexInstance, sessionId: string): Promise<CodexTurnSettings> {
+    const runtime = this.sessions.get(sessionId) || await this.runtime(instance);
+    if (!instance.workspace || normalized(await fs.realpath(instance.workspace)) !== normalized(runtime.cwd)) {
+      throw new Error("This conversation belongs to another project. Refresh conversations.");
+    }
+    if (sessionId && !runtime.sessions.has(sessionId)) {
+      const read = await runtime.client.request("thread/read", { threadId: sessionId, includeTurns: false });
+      if (typeof read?.thread?.cwd !== "string" || normalized(read.thread.cwd) !== normalized(runtime.cwd)) {
+        throw new Error("This conversation belongs to another project. Refresh conversations.");
+      }
+    }
+    return this.readTurnSettings(runtime, sessionId);
+  }
 
   async conversations(instance: CodexInstance): Promise<CodexInstanceConversation[]> {
     const runtime = await this.runtime(instance);
@@ -51,8 +68,9 @@ export class CodexProjectSessions {
     return rows;
   }
 
-  async send(instance: CodexInstance, sessionId: string, message: CodexMessage): Promise<CodexMessageReceipt> {
+  async send(instance: CodexInstance, sessionId: string, message: CodexMessage, turnOptions?: CodexTurnOptions): Promise<CodexMessageReceipt> {
     validateCodexMessage(message);
+    const options = validateTurnOptions(turnOptions);
     const lock = sessionId || identity(instance);
     if (this.sending.has(lock)) throw new Error("A message is already being sent to this Codex conversation.");
     this.sending.add(lock);
@@ -61,11 +79,16 @@ export class CodexProjectSessions {
       if (!instance.workspace || normalized(await fs.realpath(instance.workspace)) !== normalized(runtime.cwd)) {
         throw new Error("This conversation belongs to another project. Refresh conversations.");
       }
+      if (hasTurnOptions(options) && runtime.turns.has(sessionId)) throw new CodexTurnNotStartedError("Codex is working. Wait for this turn to finish; your draft is preserved.");
+      const turnSettings = hasTurnOptions(options) ? await this.readTurnSettings(runtime, sessionId) : undefined;
+      const overrides = turnSettings ? resolveTurnOptions(options, turnSettings) : {};
       if (!sessionId) {
-        const result = await runtime.client.request("thread/start", { cwd: runtime.cwd });
+        const result = await runtime.client.request("thread/start", { cwd: runtime.cwd,
+          ...("model" in overrides ? { model: overrides.model } : {}) });
         sessionId = result?.thread?.id;
         if (!isCodexSessionId(sessionId)) throw new Error("Codex did not confirm the new conversation.");
         this.sessions.set(sessionId, runtime); runtime.sessions.add(sessionId);
+        runtime.created.add(sessionId);
       } else if (!runtime.sessions.has(sessionId)) {
         // Recheck persisted membership immediately before resuming; renderer IDs are untrusted.
         const read = await runtime.client.request("thread/read", { threadId: sessionId, includeTurns: false });
@@ -75,14 +98,15 @@ export class CodexProjectSessions {
         await runtime.client.request("thread/resume", { threadId: sessionId, cwd: runtime.cwd });
         this.sessions.set(sessionId, runtime); runtime.sessions.add(sessionId);
       }
-      return await this.deliver(runtime, sessionId, message);
+      if (turnSettings && Object.keys(turnSettings.current).length) runtime.settings.set(sessionId, turnSettings.current);
+      return await this.deliver(runtime, sessionId, message, overrides);
     } finally { this.sending.delete(lock); }
   }
 
-  async sendExisting(sessionId: string, message: CodexMessage): Promise<CodexMessageReceipt> {
+  async sendExisting(sessionId: string, message: CodexMessage, options?: CodexTurnOptions): Promise<CodexMessageReceipt> {
     const runtime = this.sessions.get(sessionId);
     if (!runtime) throw new Error("This project conversation is no longer running in Tray Platform.");
-    return this.send(runtime.instance, sessionId, message);
+    return this.send(runtime.instance, sessionId, message, options);
   }
 
   close() {
@@ -91,17 +115,54 @@ export class CodexProjectSessions {
     this.runtimes.clear(); this.sessions.clear();
   }
 
-  private async deliver(runtime: Runtime, sessionId: string, message: CodexMessage): Promise<CodexMessageReceipt> {
+  private async deliver(runtime: Runtime, sessionId: string, message: CodexMessage, overrides: ReturnType<typeof resolveTurnOptions>): Promise<CodexMessageReceipt> {
     const { input } = codexMessageParts(message);
     const active = runtime.turns.get(sessionId);
     if (active) {
+      if (Object.keys(overrides).length) throw new CodexTurnNotStartedError("Codex is working. Wait for this turn to finish; your draft is preserved.");
       const result = await runtime.client.request("turn/steer", { threadId: sessionId, input, expectedTurnId: active });
       if (typeof result?.turnId !== "string") throw new Error("Codex did not confirm the message. Check the conversation before sending again.");
       return { sessionId, turnId: result.turnId, delivery: "steered" };
     }
-    const result = await runtime.client.request("turn/start", { threadId: sessionId, input });
+    const result = await runtime.client.request("turn/start", { threadId: sessionId, input, ...overrides });
     if (typeof result?.turn?.id !== "string") throw new Error("Codex did not confirm the message. Check the conversation before sending again.");
+    if (Object.keys(overrides).length) {
+      const prior = runtime.settings.get(sessionId) || {};
+      runtime.settings.set(sessionId, { ...prior, ...("model" in overrides ? { model: overrides.model } : {}),
+        ...("effort" in overrides ? { effort: overrides.effort } : {}),
+        ...("collaborationMode" in overrides ? { mode: overrides.collaborationMode!.mode,
+          model: overrides.collaborationMode!.settings.model, effort: overrides.collaborationMode!.settings.reasoning_effort } : {}) });
+    }
     return { sessionId, turnId: result.turn.id, delivery: "started" };
+  }
+
+  private async readTurnSettings(runtime: Runtime, sessionId: string): Promise<CodexTurnSettings> {
+    const models: CodexTurnModel[] = [];
+    let cursor: string | null = null;
+    const seen = new Set<string>();
+    do {
+      const page = await runtime.client.request("model/list", { cursor, limit: 100, includeHidden: false });
+      if (!Array.isArray(page?.data)) throw new Error("Codex model catalog is unavailable.");
+      for (const row of page.data) {
+        if (typeof row?.model !== "string" || typeof row?.displayName !== "string" || !Array.isArray(row.supportedReasoningEfforts)) continue;
+        models.push({ id: row.model, name: row.displayName, defaultEffort: String(row.defaultReasoningEffort || ""),
+          efforts: row.supportedReasoningEfforts.filter((effort: any) => typeof effort?.reasoningEffort === "string")
+            .map((effort: any) => ({ id: effort.reasoningEffort, description: String(effort.description || "") })) });
+      }
+      cursor = page.nextCursor || null;
+      if (cursor && seen.has(cursor)) throw new Error("Codex returned a repeated model catalog page.");
+      if (cursor) seen.add(cursor);
+      if (models.length > 200 || seen.size > 10) throw new Error("Codex model catalog exceeded its limit.");
+    } while (cursor);
+    const config = (await runtime.client.request("config/read", {}))?.config;
+    const provider = typeof config?.model_provider === "string" ? config.model_provider : undefined;
+    let current = sessionId ? runtime.settings.get(sessionId) || {} : {};
+    if (!sessionId || (runtime.created.has(sessionId) && !runtime.settings.has(sessionId))) {
+      const model = typeof config?.model === "string" && models.some(row => row.id === config.model) ? config.model : undefined;
+      const selected = models.find(row => row.id === model);
+      current = { model, effort: typeof config?.model_reasoning_effort === "string" ? config.model_reasoning_effort : selected?.defaultEffort };
+    }
+    return { models, current, available: models.length > 0, provider };
   }
 
   private runtime(instance: CodexInstance): Promise<Runtime> {
@@ -125,7 +186,8 @@ export class CodexProjectSessions {
     const cwd = await fs.realpath(instance.workspace);
     if (!(await fs.stat(cwd)).isDirectory()) throw new Error("The project folder is unavailable.");
     if (this.closed) throw new Error("Codex project messaging is closed.");
-    const runtime: Runtime = { client: undefined as any, cwd, instance, sessions: new Set(), turns: new Map(), output: new Map() };
+    const runtime: Runtime = { client: undefined as any, cwd, instance, sessions: new Set(), turns: new Map(),
+      output: new Map(), settings: new Map(), created: new Set() };
     const proposed = new Map<string, any>();
     const itemKey = (threadId: string, turnId: string, itemId: string) => JSON.stringify([threadId, turnId, itemId]);
     const callbacks = {

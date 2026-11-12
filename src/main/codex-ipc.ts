@@ -21,7 +21,8 @@ export interface CodexIpcBroadcast {
 }
 
 /** Local extension IPC, verified against openai.chatgpt 26.1007.21434;
- * read-only status subscriptions also verified against 26.1021.22027.
+ * status subscriptions against 26.1021.22027; and model-settings read plus
+ * turn-start v2 override shape against installed 26.1106.51428.
  * This is a versioned internal protocol, not the app-server stdio protocol.
  * Never create a router, reconnect, or replay a possibly delivered message.
  */

@@ -108,7 +108,15 @@ export const applicationReady = singleInstance ? app.whenReady().then(async () =
     },
   });
   const codexMessages = new CodexMessageService(undefined, codexProjects,
-    createCodexCompletionResume(codexInstances, codexProjects));
+    createCodexCompletionResume(codexInstances, codexProjects), async item => {
+      const instances = codexInstances.list().instances;
+      const origin = item.origin;
+      const instance = instances.find(row => origin?.kind === "vscode-codex" && row.codexPid === origin.codexPid &&
+        row.codexStartedAt === origin.codexStartedAt && row.vscodePid === origin.vscodePid && row.vscodeStartedAt === origin.vscodeStartedAt)
+        || instances.find(row => row.workspace && item.project && row.workspace.toLowerCase() === item.project.toLowerCase());
+      if (!instance) throw new Error("No running Codex instance is available for this project. Open it in VS Code and refresh settings.");
+      return codexProjects.turnSettings(instance, item.codexSessionId || "");
+    });
   const codexInstanceMessages = new CodexInstanceMessages({ inventory: codexInstances, messages: codexMessages, projects: codexProjects,
     verifyProcesses: identities => desktop.areProcessesRunning(identities) });
   const codexQuestions = new CodexQuestionService(codexMessages);
@@ -210,11 +218,15 @@ export const applicationReady = singleInstance ? app.whenReady().then(async () =
     const item = findItem(source, id);
     await activateAttention(item);
   });
-  ipcMain.handle("attention-message", async (event, source: string, id: string, message: unknown) => {
+  ipcMain.handle("attention-message", async (event, source: string, id: string, message: unknown, options?: unknown) => {
     if (event.sender !== mainWindow.webContents || event.senderFrame !== mainWindow.webContents.mainFrame) {
       throw new Error("Messages must be sent from the attention inbox.");
     }
-    return operations.message(source, id, await codexAttachments.message(message, "desktop"));
+    const resolved = await codexAttachments.message(message, "desktop");
+    return options ? operations.message(source, id, resolved, options as any) : operations.message(source, id, resolved);
+  });
+  ipcMain.handle("attention-turn-settings", (event, source: string, id: string) => {
+    requireInbox(event); return operations.turnSettings(source, id);
   });
   const requireInbox = (event: Electron.IpcMainInvokeEvent) => {
     if (event.sender !== mainWindow.webContents || event.senderFrame !== mainWindow.webContents.mainFrame) {
@@ -246,8 +258,14 @@ export const applicationReady = singleInstance ? app.whenReady().then(async () =
   ipcMain.handle("codex-instance-conversations", (event, target) => {
     requireInbox(event); return codexInstanceMessages.conversations(target);
   });
-  ipcMain.handle("codex-instance-message", async (event, target, conversationId, message) => {
-    requireInbox(event); return codexInstanceMessages.send(target, conversationId, await codexAttachments.message(message, "desktop"));
+  ipcMain.handle("codex-instance-turn-settings", (event, target, conversationId) => {
+    requireInbox(event); return codexInstanceMessages.turnSettings(target, conversationId);
+  });
+  ipcMain.handle("codex-instance-message", async (event, target, conversationId, message, options) => {
+    requireInbox(event);
+    const resolved = await codexAttachments.message(message, "desktop");
+    return options ? codexInstanceMessages.send(target, conversationId, resolved, options)
+      : codexInstanceMessages.send(target, conversationId, resolved);
   });
   ipcMain.handle("shortcuts-list", () => shortcuts.list());
   ipcMain.handle("shortcuts-set", (_event, key: ShortcutKey, accelerator: string) => shortcuts.set(key, accelerator));

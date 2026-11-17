@@ -34,11 +34,13 @@ export interface CodexInstancesSnapshot {
 }
 
 export interface CodexInstancesBridge extends CodexAttachmentsBridge {
+  getCodexInstanceTurnSettings?(target: CodexInstanceTarget, conversationId: string): Promise<import("./codex-turn-controls").CodexTurnSettings>;
   getCodexInstances(): Promise<CodexInstancesSnapshot>;
   refreshCodexInstances(): Promise<CodexInstancesSnapshot>;
   onCodexInstancesChanged(callback: (snapshot: CodexInstancesSnapshot) => void): () => void;
   getCodexInstanceConversations?(target: CodexInstanceTarget): Promise<CodexInstanceConversation[]>;
-  sendCodexInstanceMessage?(target: CodexInstanceTarget, conversationId: string, message: import("./codex-attachments").CodexMessageDraft): Promise<import("./codex-message").CodexMessageReceipt>;
+  sendCodexInstanceMessage?(target: CodexInstanceTarget, conversationId: string, message: import("./codex-attachments").CodexMessageDraft,
+    options?: import("./codex-turn-controls").CodexTurnOptions): Promise<import("./codex-message").CodexMessageReceipt>;
   onRecoveredCodexInstanceMessage?(callback: (delivery: RecoveredCodexInstanceMessage) => void): () => void;
 }
 
@@ -47,6 +49,7 @@ export interface CodexInstanceConversation { id: string; title: string; lastActi
 export interface RecoveredCodexInstanceMessage {
   target: CodexInstanceTarget; receipt: import("./codex-message").CodexMessageReceipt;
   conversationId?: string; message?: import("./codex-attachments").CodexMessageDraft;
+  options?: import("./codex-turn-controls").CodexTurnOptions;
 }
 
 export interface ProcessDescriptor {

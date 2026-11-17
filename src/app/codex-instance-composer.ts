@@ -3,10 +3,13 @@ import { CodexMessageReceipt, MAX_CODEX_MESSAGE_LENGTH } from "../shared/codex-m
 import { sameMessageDraft } from "../shared/codex-attachments";
 import { AttachmentDraft, attachmentMessage, mountCodexAttachmentsUI, newAttachmentDraft } from "./codex-attachments-ui";
 import { createCodexMessageInput } from "./codex-message-input";
+import { CodexTurnOptions, CodexTurnSettings } from "../shared/codex-turn-controls";
+import { mountCodexTurnControls } from "./codex-turn-controls-ui";
 
 interface Draft {
   instance: CodexInstance; conversations: CodexInstanceConversation[]; conversationId: string; text: string; attachments: AttachmentDraft;
   loading: boolean; sending: boolean; sendRevision: number; available: boolean; loaded: boolean; selectionMissing: boolean; status: string; error: string;
+  options?: CodexTurnOptions; settings?: CodexTurnSettings; settingsRevision: number;
 }
 const identity = (row: CodexInstance) => JSON.stringify([row.codexPid, row.codexStartedAt]);
 const target = (row: CodexInstance) => ({ codexPid: row.codexPid, codexStartedAt: row.codexStartedAt });
@@ -34,9 +37,11 @@ export function mountCodexInstanceComposer(root: HTMLElement, bridge: CodexInsta
   const status = document.createElement("p"); status.setAttribute("role", "status");
   const error = document.createElement("p"); error.setAttribute("role", "alert");
   const attachmentRoot = document.createElement("section");
+  const controlsRoot = document.createElement("section");
+  const controls = mountCodexTurnControls(controlsRoot, () => { if (active) { active.options = controls.getDraft(); refreshUI(); } });
   const actions = document.createElement("div"); actions.dataset.composerActions = "";
   close.dataset.composerClose = ""; actions.append(close, send);
-  form.append(conversationLabel, refresh, messageLabel, attachmentRoot, hint, actions, status, error);
+  form.append(conversationLabel, refresh, messageLabel, attachmentRoot, controlsRoot, hint, actions, status, error);
   root.append(heading, context, form);
   const attachmentUI = mountCodexAttachmentsUI(attachmentRoot, form, bridge, () => active?.attachments, refreshUI);
   actions.insertBefore(attachmentUI.button, send);
@@ -44,7 +49,8 @@ export function mountCodexInstanceComposer(root: HTMLElement, bridge: CodexInsta
     const draft = drafts.get(JSON.stringify([delivery.target.codexPid, delivery.target.codexStartedAt]));
     if (!draft || disposed) return;
     draft.sendRevision++; draft.sending = false;
-    if (delivery.message !== undefined && sameMessageDraft(delivery.message, attachmentMessage(draft.text, draft.attachments)) && draft.conversationId === delivery.conversationId) {
+    if (delivery.message !== undefined && sameMessageDraft(delivery.message, attachmentMessage(draft.text, draft.attachments)) &&
+      draft.conversationId === delivery.conversationId && JSON.stringify(delivery.options || {}) === JSON.stringify(draft.options || {})) {
       acknowledge(draft, delivery.receipt);
     } else {
       draft.error = ""; draft.status = "Previous message delivery confirmed. Your current draft is preserved.";
@@ -79,6 +85,8 @@ export function mountCodexInstanceComposer(root: HTMLElement, bridge: CodexInsta
     input.disabled = draft.sending || !draft.available;
     refresh.disabled = busy || !draft.available;
     send.disabled = busy || !draft.available || draft.selectionMissing || (!draft.text.trim() && !draft.attachments.files.length);
+    if (draft.options && !controls.canSend()) send.disabled = true;
+    controls.setBusy(busy || !draft.available);
     attachmentUI.refresh(draft.sending || !draft.available);
     send.textContent = draft.sending ? "Sending…" : "Send message";
     status.textContent = draft.status;
@@ -96,16 +104,34 @@ export function mountCodexInstanceComposer(root: HTMLElement, bridge: CodexInsta
         if (draft.conversationId) {
           draft.selectionMissing = true;
           draft.error = "The selected conversation is unavailable. Choose New conversation or another conversation before sending.";
+          draft.options = undefined;
+          if (active === draft) controls.setDraft(undefined);
         }
         draft.conversationId = "";
       }
       draft.loaded = true;
       draft.status = conversations.length ? "" : "No saved conversations in this project. Send a message to start one.";
+      void loadSettings(draft);
     } catch (reason) { draft.error = errorText(reason); draft.status = ""; }
     finally {
       draft.loading = false;
       if (!disposed && active === draft) { renderChoices(); refreshUI(); }
     }
+  }
+  async function loadSettings(draft: Draft) {
+    if (disposed || !bridge.getCodexInstanceTurnSettings || !draft.available) return;
+    const revision = ++draft.settingsRevision, conversationId = draft.conversationId;
+    draft.settings = undefined;
+    if (active === draft) controls.setSettings(undefined);
+    try {
+      const settings = await bridge.getCodexInstanceTurnSettings(target(draft.instance), conversationId);
+      if (disposed || revision !== draft.settingsRevision || conversationId !== draft.conversationId) return;
+      draft.settings = settings;
+    } catch (reason) {
+      if (disposed || revision !== draft.settingsRevision) return;
+      draft.settings = { models: [], current: {}, available: false, reason: errorText(reason) };
+    }
+    if (active === draft) { controls.setSettings(draft.settings); refreshUI(); }
   }
   async function submit() {
     const draft = active;
@@ -114,7 +140,9 @@ export function mountCodexInstanceComposer(root: HTMLElement, bridge: CodexInsta
     draft.sending = true; draft.error = ""; draft.status = "Sending to Codex…"; refreshUI();
     try {
       await attachmentUI.upload(draft.attachments);
-      const receipt = await bridge.sendCodexInstanceMessage(target(draft.instance), draft.conversationId, attachmentMessage(draft.text, draft.attachments));
+      const message = attachmentMessage(draft.text, draft.attachments);
+      const receipt = draft.options ? await bridge.sendCodexInstanceMessage(target(draft.instance), draft.conversationId, message, draft.options)
+        : await bridge.sendCodexInstanceMessage(target(draft.instance), draft.conversationId, message);
       if (disposed || draft.sendRevision !== revision) return;
       acknowledge(draft, receipt);
     } catch (reason) { if (draft.sendRevision === revision) { draft.error = errorText(reason); draft.status = ""; } }
@@ -131,13 +159,20 @@ export function mountCodexInstanceComposer(root: HTMLElement, bridge: CodexInsta
       draft.conversationId = receipt.sessionId;
       if (active === draft) renderChoices();
     }
-    draft.text = ""; draft.error = ""; draft.attachments = newAttachmentDraft();
+    draft.text = ""; draft.error = ""; draft.attachments = newAttachmentDraft(); draft.options = undefined;
+    if (active === draft) controls.setDraft(undefined);
+    void loadSettings(draft);
     draft.status = creating ? "New conversation started. The response will appear in the Attention Inbox."
       : receipt.delivery === "steered" ? "Sent to the active Codex turn." : "Sent to Codex as a follow-up.";
     if (active === draft) { input.value = ""; refreshUI(); }
   }
   input.element.addEventListener("input", () => { if (active) { active.text = input.value; refreshUI(); } });
-  select.addEventListener("change", () => { if (active) { active.conversationId = select.value; active.selectionMissing = false; active.status = ""; active.error = ""; refreshUI(); } });
+  select.addEventListener("change", () => { if (active) {
+    if (active.conversationId === select.value && !active.selectionMissing) return;
+    active.conversationId = select.value; active.selectionMissing = false;
+    active.options = undefined; controls.setDraft(undefined); active.status = ""; active.error = "";
+    void loadSettings(active); refreshUI();
+  } });
   input.element.addEventListener("keydown", event => {
     if (event.key === "Enter" && (event.ctrlKey || event.metaKey) && !event.isComposing) { event.preventDefault(); void submit(); }
   });
@@ -150,9 +185,10 @@ export function mountCodexInstanceComposer(root: HTMLElement, bridge: CodexInsta
       const id = identity(instance);
       let draft = drafts.get(id);
       if (!draft) { draft = { instance, conversations: [], conversationId: "", text: "", attachments: newAttachmentDraft(), loading: false, sending: false, sendRevision: 0,
-        available: true, loaded: false, selectionMissing: false, status: "", error: "" }; drafts.set(id, draft); }
+        available: true, loaded: false, selectionMissing: false, status: "", error: "", settingsRevision: 0 }; drafts.set(id, draft); }
       draft.instance = instance; draft.available = true; active = draft;
-      root.hidden = false; input.value = draft.text; renderChoices(); refreshUI();
+      root.hidden = false; input.value = draft.text; controls.setDraft(draft.options); controls.setSettings(draft.settings);
+      renderChoices(); refreshUI();
       root.scrollIntoView({ block: "nearest" }); input.focus();
       if (!draft.loaded) void load(draft);
     },
@@ -163,6 +199,6 @@ export function mountCodexInstanceComposer(root: HTMLElement, bridge: CodexInsta
       }
       refreshUI();
     },
-    dispose() { disposed = true; unsubscribeRecovered?.(); attachmentUI.dispose(); input.dispose(); drafts.clear(); root.replaceChildren(); },
+    dispose() { disposed = true; unsubscribeRecovered?.(); attachmentUI.dispose(); controls.dispose(); input.dispose(); drafts.clear(); root.replaceChildren(); },
   };
 }

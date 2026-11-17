@@ -13,10 +13,11 @@ import { CodexInstanceService } from "./codex-instance-service";
 import { CodexInstanceMessages } from "./codex-instance-messages";
 import { CodexAttachments } from "./codex-attachments";
 import { MAX_CODEX_UPLOAD_BODY } from "../shared/codex-attachments";
+import { CodexTurnOptions } from "../shared/codex-turn-controls";
 
 export interface WebCodexInstances {
   instances: Pick<CodexInstanceService, "list" | "refresh" | "onChanged">;
-  messages: Pick<CodexInstanceMessages, "conversations" | "send">;
+  messages: Pick<CodexInstanceMessages, "conversations" | "send"> & Partial<Pick<CodexInstanceMessages, "turnSettings">>;
 }
 
 export interface AttentionWebConfig { origin: string; allowedUsers: string[]; port: number; }
@@ -113,17 +114,25 @@ export function createAttentionWeb(options: {
         if (pathname === "/api/codex-instances/refresh" && req.method === "POST") {
           await readJson(req); sendJson(res, 200, await instances.refresh()); return;
         }
-        const route = /^\/api\/codex-instances\/([1-9]\d*)\/([^/]+)\/(conversations|messages)$/.exec(pathname);
+        const route = /^\/api\/codex-instances\/([1-9]\d*)\/([^/]+)\/(conversations|messages|turn-settings)$/.exec(pathname);
         if (!route) throw new AttentionError("Unknown endpoint", 404);
         let startedAt: string;
         try { startedAt = decodeURIComponent(route[2]); } catch { throw new AttentionError("Invalid URL encoding"); }
         const target = { codexPid: Number(route[1]), codexStartedAt: startedAt };
         if (!Number.isSafeInteger(target.codexPid) || !Number.isFinite(Date.parse(startedAt))) throw new AttentionError("Invalid Codex instance");
         if (route[3] === "conversations" && req.method === "GET") { sendJson(res, 200, await messages.conversations(target)); return; }
+        if (route[3] === "turn-settings" && req.method === "GET") {
+          if (!messages.turnSettings) throw new AttentionError("Codex turn settings are unavailable", 503);
+          const conversationId = new URL(req.url!, config.origin).searchParams.get("conversationId") || "";
+          sendJson(res, 200, await messages.turnSettings(target, conversationId)); return;
+        }
         if (route[3] !== "messages" || req.method !== "POST") throw new AttentionError("Method not allowed", 405);
         const input = await readJson(req);
-        const receipt = await receipts.run(user, input.requestId, { action: "instance-message", target, value: input.value }, async () =>
-          messages.send(target, input.value?.conversationId, await resolveMessage(input.value?.message, user)));
+        const receipt = await receipts.run(user, input.requestId, { action: "instance-message", target, value: input.value }, async () => {
+          const message = await resolveMessage(input.value?.message, user);
+          return input.value?.options ? messages.send(target, input.value?.conversationId, message, input.value.options as CodexTurnOptions)
+            : messages.send(target, input.value?.conversationId, message);
+        });
         sendJson(res, 200, receipt); return;
       }
       if (req.method === "POST" && pathname.startsWith("/api/push/")) {
@@ -134,7 +143,7 @@ export function createAttentionWeb(options: {
         else throw new AttentionError("Unknown endpoint", 404);
         return;
       }
-      const match = /^\/api\/attention\/([^/]+)\/([^/]+)\/(state|questions|answers|messages|file|approvals)$/.exec(pathname);
+      const match = /^\/api\/attention\/([^/]+)\/([^/]+)\/(state|questions|answers|messages|file|approvals|turn-settings)$/.exec(pathname);
       if (!match) throw new AttentionError("Unknown endpoint", 404);
       let source: string, id: string;
       try { source = decodeURIComponent(match[1]); id = decodeURIComponent(match[2]); } catch { throw new AttentionError("Invalid URL encoding"); }
@@ -150,6 +159,7 @@ export function createAttentionWeb(options: {
         res.writeHead(200, { ...file.headers, "Content-Length": file.body.length }); res.end(file.body); return;
       }
       if (action === "questions" && req.method === "GET") { sendJson(res, 200, await operations.questions(source, id)); return; }
+      if (action === "turn-settings" && req.method === "GET") { sendJson(res, 200, await operations.turnSettings(source, id)); return; }
       if (action === "approvals") {
         if (!operations.approval || !operations.approve) throw new AttentionError("Approvals are unavailable", 503);
         if (req.method === "GET") { sendJson(res, 200, operations.approval(source, id)); return; }
@@ -162,8 +172,9 @@ export function createAttentionWeb(options: {
       const input = await readJson(req);
       if (action === "state") { await attention.setState(source, id, input.state); sendJson(res, 200, { ok: true }); return; }
       const receipt = await receipts.run(user, input.requestId, { source, id, action, value: input.value }, async () =>
-        action === "answers" ? operations.answer(source, id, input.value) : operations.message(source, id,
-          await resolveMessage(input.value, user)));
+        action === "answers" ? operations.answer(source, id, input.value) : action === "messages" && input.value?.options
+          ? operations.message(source, id, await resolveMessage(input.value.message, user), input.value.options)
+          : operations.message(source, id, await resolveMessage(input.value, user)));
       sendJson(res, 200, receipt);
     } catch (error) {
       if (!res.headersSent) sendJson(res, error instanceof AttentionError ? error.status : 500,

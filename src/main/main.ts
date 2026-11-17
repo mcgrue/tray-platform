@@ -29,6 +29,7 @@ import { attentionOperations } from "./attention-operations";
 import { startAttentionWeb } from "./attention-web";
 import { CodexInstanceMessages } from "./codex-instance-messages";
 import { CodexProjectSessions } from "./codex-project-sessions";
+import { createCodexCompletionResume } from "./codex-completion-resume";
 import { CodexApprovalService } from "./codex-approval-service";
 import { CodexAttachments } from "./codex-attachments";
 
@@ -106,7 +107,8 @@ export const applicationReady = singleInstance ? app.whenReady().then(async () =
       throw new Error(message);
     },
   });
-  const codexMessages = new CodexMessageService(undefined, codexProjects);
+  const codexMessages = new CodexMessageService(undefined, codexProjects,
+    createCodexCompletionResume(codexInstances, codexProjects));
   const codexInstanceMessages = new CodexInstanceMessages({ inventory: codexInstances, messages: codexMessages, projects: codexProjects,
     verifyProcesses: identities => desktop.areProcessesRunning(identities) });
   const codexQuestions = new CodexQuestionService(codexMessages);

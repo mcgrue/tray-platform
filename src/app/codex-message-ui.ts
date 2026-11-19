@@ -3,7 +3,7 @@ import { attentionCodexSession, MAX_CODEX_MESSAGE_LENGTH } from "../shared/codex
 import { CodexMessageDraft, sameMessageDraft } from "../shared/codex-attachments";
 import { attachmentMessage, mountCodexAttachmentsUI, newAttachmentDraft } from "./codex-attachments-ui";
 import { createCodexMessageInput } from "./codex-message-input";
-import { CodexTurnOptions } from "../shared/codex-turn-controls";
+import { CodexTurnOptions, CodexTurnSettings } from "../shared/codex-turn-controls";
 import { mountCodexTurnControls } from "./codex-turn-controls-ui";
 
 const MONITOR_PR_CI_MESSAGE = "Monitor the PR's CI run on a 4 minute poll - if red, fix it; if green merge it";
@@ -54,7 +54,8 @@ export function mountCodexMessageUI(root: HTMLElement, bridge: AttentionBridge, 
   error.setAttribute("role", "alert");
   const attachmentRoot = document.createElement("section");
   const controlsRoot = document.createElement("section");
-  const controls = mountCodexTurnControls(controlsRoot, refresh);
+  let settingsRevision = 0;
+  const controls = mountCodexTurnControls(controlsRoot, refresh, loadSettings);
   const actions = document.createElement("div"); actions.dataset.composerActions = ""; actions.append(send);
   if (monitorPrCi) actions.insertBefore(monitorPrCi, send);
   form.append(label, attachmentRoot, controlsRoot);
@@ -114,13 +115,17 @@ export function mountCodexMessageUI(root: HTMLElement, bridge: AttentionBridge, 
     }
   }
   async function loadSettings() {
-    if (item.source !== "codex" || !attentionCodexSession(item)) return;
+    if (disposed || item.source !== "codex" || !attentionCodexSession(item)) return;
+    const revision = ++settingsRevision;
     if (!bridge.getAttentionTurnSettings) {
       controls.setSettings({ models: [], current: {}, available: false, reason: "Turn settings are unavailable." }); return;
     }
-    try { controls.setSettings(await bridge.getAttentionTurnSettings(item.source, item.id)); }
-    catch (reason) { controls.setSettings({ models: [], current: {}, available: false,
-      reason: reason instanceof Error ? reason.message : String(reason) }); }
+    let settings: CodexTurnSettings;
+    try { settings = await bridge.getAttentionTurnSettings(item.source, item.id); }
+    catch (reason) { settings = { models: [], current: {}, available: false,
+      reason: reason instanceof Error ? reason.message : String(reason) }; }
+    if (disposed || revision !== settingsRevision) return;
+    controls.setSettings(settings);
     refresh();
   }
   input.element.addEventListener("input", refresh);

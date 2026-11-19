@@ -38,7 +38,9 @@ export function mountCodexInstanceComposer(root: HTMLElement, bridge: CodexInsta
   const error = document.createElement("p"); error.setAttribute("role", "alert");
   const attachmentRoot = document.createElement("section");
   const controlsRoot = document.createElement("section");
-  const controls = mountCodexTurnControls(controlsRoot, () => { if (active) { active.options = controls.getDraft(); refreshUI(); } });
+  const controls = mountCodexTurnControls(controlsRoot, () => {
+    if (active) { active.options = controls.getDraft(); refreshUI(); }
+  }, () => { if (active) void loadSettings(active); });
   const actions = document.createElement("div"); actions.dataset.composerActions = "";
   close.dataset.composerClose = ""; actions.append(close, send);
   form.append(conversationLabel, refresh, messageLabel, attachmentRoot, controlsRoot, hint, actions, status, error);

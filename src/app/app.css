@@ -72,6 +72,8 @@ details { margin-top: 12px; }
 summary { cursor: pointer; color: var(--muted-foreground); padding: 6px 0; font-size: 13px; font-weight: 500; }
 summary:hover, details[open] > summary { color: var(--foreground); }
 details[open] { padding-bottom: 8px; }
+.codex-turn-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: end; gap: 8px; }
+.codex-turn-fields > label { min-width: 0; margin: 0; }
 
 article, [data-navigation-chooser], [data-bookmark-editor] {
   background: var(--card);

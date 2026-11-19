@@ -2,11 +2,16 @@ import { CodexTurnOptions, CodexTurnSettings, hasTurnOptions } from "../shared/c
 
 /** One set of controls per mounted composer; callers own draft isolation. */
 export function mountCodexTurnControls(root: HTMLElement, changed: () => void) {
-  const group = document.createElement("fieldset"); group.dataset.codexTurnControls = "";
-  const legend = document.createElement("legend"); legend.textContent = "Next turn settings"; group.appendChild(legend);
+  const group = document.createElement("details");
+  group.dataset.codexTurnControls = "";
+  const summary = document.createElement("summary");
+  summary.textContent = "Next turn settings";
+  const fields = document.createElement("div");
+  fields.className = "codex-turn-fields";
+  group.append(summary, fields);
   const label = (name: string) => {
     const row = document.createElement("label"); row.textContent = name;
-    const select = document.createElement("select"); row.appendChild(select); group.appendChild(row); return select;
+    const select = document.createElement("select"); row.appendChild(select); fields.appendChild(row); return select;
   };
   const mode = label("Mode"), model = label("Model"), effort = label("Reasoning effort");
   const current = document.createElement("p"); current.dataset.muted = ""; group.appendChild(current);
@@ -30,7 +35,6 @@ export function mountCodexTurnControls(root: HTMLElement, changed: () => void) {
     current.textContent = settings ? `Current: ${settings.current.mode || "mode unknown"} · ${settings.current.model || "model unknown"} · ${settings.current.effort === undefined ? "effort unknown" : settings.current.effort || "default effort"}`
       : "Loading Codex settings…";
     warning.textContent = !available && settings ? settings.reason || "Settings are unavailable; messages still work." : problem();
-    group.hidden = false;
   }
   function problem(): string {
     if (!hasTurnOptions(draft)) return "";

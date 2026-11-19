@@ -1,7 +1,23 @@
 import { CodexTurnOptions, CodexTurnSettings, hasTurnOptions } from "../shared/codex-turn-controls";
 
+function showChoices(select: HTMLSelectElement, choices: HTMLOptionElement[], inherited: string | null | undefined,
+  override: string | undefined, fallback = "Use conversation setting") {
+  const selected = override ?? inherited ?? "";
+  if (selected && !choices.some(choice => choice.value === selected)) {
+    const unavailable = new Option(selected, selected);
+    unavailable.disabled = true;
+    choices.push(unavailable);
+  }
+  select.replaceChildren(new Option(fallback, ""), ...choices);
+  select.value = selected;
+}
+
+function overrideValue(select: HTMLSelectElement, inherited: string | null | undefined) {
+  return select.value && select.value !== inherited ? select.value : undefined;
+}
+
 /** One set of controls per mounted composer; callers own draft isolation. */
-export function mountCodexTurnControls(root: HTMLElement, changed: () => void) {
+export function mountCodexTurnControls(root: HTMLElement, changed: () => void, refreshSettings: () => void) {
   const group = document.createElement("details");
   group.dataset.codexTurnControls = "";
   const summary = document.createElement("summary");
@@ -9,6 +25,7 @@ export function mountCodexTurnControls(root: HTMLElement, changed: () => void) {
   const fields = document.createElement("div");
   fields.className = "codex-turn-fields";
   group.append(summary, fields);
+  group.addEventListener("toggle", () => { if (group.open) refreshSettings(); });
   const label = (name: string) => {
     const row = document.createElement("label"); row.textContent = name;
     const select = document.createElement("select"); row.appendChild(select); fields.appendChild(row); return select;
@@ -18,18 +35,17 @@ export function mountCodexTurnControls(root: HTMLElement, changed: () => void) {
   const warning = document.createElement("p"); warning.setAttribute("aria-live", "polite"); group.appendChild(warning);
   root.appendChild(group);
   let settings: CodexTurnSettings | undefined, draft: CodexTurnOptions = {}, busy = false;
-  const option = (value: string, text: string) => { const row = document.createElement("option"); row.value = value; row.textContent = text; return row; };
   const selectedModel = () => draft.model || settings?.current.model;
   const selectedEffort = () => draft.effort || settings?.current.effort;
   function render() {
-    mode.replaceChildren(option("", "Use conversation setting"), option("plan", "Plan"), option("default", "Default"));
-    mode.value = draft.mode || "";
-    model.replaceChildren(option("", "Use conversation setting"), ...(settings?.models || []).map(row => option(row.id, row.name)));
-    model.value = draft.model || "";
-    const entry = settings?.models.find(row => row.id === selectedModel());
-    effort.replaceChildren(option("", "Use conversation setting"), ...(entry?.efforts || []).map(row => option(row.id, row.id)));
-    if (draft.effort && !entry?.efforts.some(row => row.id === draft.effort)) draft.effort = undefined;
-    effort.value = draft.effort || "";
+    const session = settings?.current;
+    const models = settings?.models ?? [];
+    const entry = models.find(row => row.id === selectedModel());
+    showChoices(mode, [new Option("Plan", "plan"), new Option("Default", "default")], session?.mode, draft.mode);
+    showChoices(model, models.map(row => new Option(row.name, row.id)), session?.model, draft.model);
+    const defaultEffort = entry?.defaultEffort ? `Model default (${entry.defaultEffort})` : "Model default";
+    showChoices(effort, (entry?.efforts ?? []).map(row => new Option(row.id, row.id)), session?.effort, draft.effort,
+      session?.effort === null ? defaultEffort : undefined);
     const available = !!settings?.available;
     mode.disabled = busy || !available; model.disabled = busy || !available; effort.disabled = busy || !entry || !available;
     current.textContent = settings ? `Current: ${settings.current.mode || "mode unknown"} · ${settings.current.model || "model unknown"} · ${settings.current.effort === undefined ? "effort unknown" : settings.current.effort || "default effort"}`
@@ -47,9 +63,19 @@ export function mountCodexTurnControls(root: HTMLElement, changed: () => void) {
     }
     return "";
   }
-  mode.addEventListener("change", () => { draft.mode = mode.value as CodexTurnOptions["mode"] || undefined; render(); changed(); });
-  model.addEventListener("change", () => { draft.model = model.value || undefined; draft.effort = undefined; render(); changed(); });
-  effort.addEventListener("change", () => { draft.effort = effort.value || undefined; render(); changed(); });
+  mode.addEventListener("change", () => {
+    draft.mode = overrideValue(mode, settings?.current.mode) as CodexTurnOptions["mode"];
+    render(); changed();
+  });
+  model.addEventListener("change", () => {
+    draft.model = overrideValue(model, settings?.current.model);
+    draft.effort = undefined;
+    render(); changed();
+  });
+  effort.addEventListener("change", () => {
+    draft.effort = overrideValue(effort, settings?.current.effort);
+    render(); changed();
+  });
   render();
   return {
     setSettings(value: CodexTurnSettings | undefined) { settings = value; render(); },
